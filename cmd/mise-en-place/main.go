@@ -4,10 +4,13 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
+	mep "github.com/charlesnpx/mise-en-place"
 	"github.com/charlesnpx/mise-en-place/internal/config"
 	"github.com/charlesnpx/mise-en-place/internal/install"
 	"github.com/charlesnpx/mise-en-place/internal/state"
@@ -69,11 +72,11 @@ func newListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			reg, err := loadRegistry()
+			source, err := loadRegistry()
 			if err != nil {
 				return err
 			}
-			install.PrintList(os.Stdout, s, reg)
+			install.PrintList(os.Stdout, s, source.Registry)
 			return nil
 		},
 	}
@@ -90,7 +93,7 @@ func newInstallCmd() *cobra.Command {
 		Use:   "install [skill]",
 		Short: "Install a skill (or --all)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			reg, err := loadRegistry()
+			source, err := loadRegistry()
 			if err != nil {
 				return err
 			}
@@ -99,15 +102,16 @@ func newInstallCmd() *cobra.Command {
 				Backup:           backup,
 				RunningInstaller: Version,
 				ManifestSchema:   ManifestSchema,
+				SkillsRoot:       source.SkillsRoot,
 				Strict:           strict,
 			}
 			if all {
-				return install.All(reg, opts)
+				return install.All(source.Registry, opts)
 			}
 			if len(args) != 1 {
 				return errors.New("specify a skill name or --all")
 			}
-			return install.One(args[0], reg, opts)
+			return install.One(args[0], source.Registry, opts)
 		},
 	}
 	cmd.Flags().StringVar(&target, "target", "all", "claude | codex | all")
@@ -134,7 +138,7 @@ func newUpgradeCmd() *cobra.Command {
 		Use:   "upgrade [skill]",
 		Short: "Upgrade an installed skill (or --all)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			reg, err := loadRegistry()
+			source, err := loadRegistry()
 			if err != nil {
 				return err
 			}
@@ -142,14 +146,15 @@ func newUpgradeCmd() *cobra.Command {
 				Target:           "all",
 				RunningInstaller: Version,
 				ManifestSchema:   ManifestSchema,
+				SkillsRoot:       source.SkillsRoot,
 			}
 			if all {
-				return install.UpgradeAll(reg, opts)
+				return install.UpgradeAll(source.Registry, opts)
 			}
 			if len(args) != 1 {
 				return errors.New("specify a skill name or --all")
 			}
-			return install.Upgrade(args[0], reg, opts)
+			return install.Upgrade(args[0], source.Registry, opts)
 		},
 	}
 	cmd.Flags().BoolVar(&all, "all", false, "upgrade every installed skill")
@@ -189,14 +194,15 @@ func newDoctorCmd() *cobra.Command {
 		Use:   "doctor",
 		Short: "Report drift, integrity, and collision issues",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			reg, err := loadRegistry()
+			source, err := loadRegistry()
 			if err != nil {
 				return err
 			}
-			return install.Doctor(os.Stdout, reg, install.Options{
+			return install.Doctor(os.Stdout, source.Registry, install.Options{
 				Target:           "all",
 				RunningInstaller: Version,
 				ManifestSchema:   ManifestSchema,
+				SkillsRoot:       source.SkillsRoot,
 			})
 		},
 	}
@@ -227,13 +233,77 @@ func errStub(name string) error {
 	return fmt.Errorf("%s is not yet implemented in this build", name)
 }
 
-func loadRegistry() (*config.Registry, error) {
-	// In a release binary the registry is embedded; for development we read
-	// it from the working directory or a discoverable repo root.
-	for _, p := range []string{"registry.yaml", "../registry.yaml", "../../registry.yaml"} {
-		if _, err := os.Stat(p); err == nil {
-			return config.LoadRegistry(p)
+type registrySource struct {
+	Registry   *config.Registry
+	SkillsRoot string
+}
+
+func loadRegistry() (*registrySource, error) {
+	if home := os.Getenv("MISE_EN_PLACE_HOME"); home != "" {
+		return loadRegistryFromRoot(home)
+	}
+	for _, root := range []string{".", "..", "../.."} {
+		if _, err := os.Stat(filepath.Join(root, "registry.yaml")); err == nil {
+			return loadRegistryFromRoot(root)
 		}
 	}
-	return nil, errors.New("registry.yaml not found (run from within the mise-en-place repo, or set MISE_EN_PLACE_HOME)")
+	root, err := defaultHome()
+	if err != nil {
+		return nil, err
+	}
+	if err := materializeBundledHome(root); err != nil {
+		return nil, err
+	}
+	return loadRegistryFromRoot(root)
+}
+
+func loadRegistryFromRoot(root string) (*registrySource, error) {
+	registryPath := filepath.Join(root, "registry.yaml")
+	reg, err := config.LoadRegistry(registryPath)
+	if err != nil {
+		return nil, err
+	}
+	return &registrySource{
+		Registry:   reg,
+		SkillsRoot: filepath.Join(root, "skills"),
+	}, nil
+}
+
+func defaultHome() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".mise-en-place"), nil
+}
+
+func materializeBundledHome(root string) error {
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(filepath.Join(root, "skills")); err != nil {
+		return err
+	}
+	for _, path := range []string{"registry.yaml", "skills"} {
+		if err := fs.WalkDir(mep.Bundled, path, func(src string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			dst := filepath.Join(root, src)
+			if d.IsDir() {
+				return os.MkdirAll(dst, 0o755)
+			}
+			body, err := mep.Bundled.ReadFile(src)
+			if err != nil {
+				return err
+			}
+			if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+				return err
+			}
+			return os.WriteFile(dst, body, 0o644)
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
