@@ -21,8 +21,8 @@ const ManifestSchema = 1
 
 // State is the in-memory representation of ~/.local/state/mise-en-place/state.json.
 type State struct {
-	ManifestSchema int             `json:"manifest_schema"`
-	MepVersion     string          `json:"mise_en_place_version"`
+	ManifestSchema int              `json:"manifest_schema"`
+	MepVersion     string           `json:"mise_en_place_version"`
 	Skills         map[string]Skill `json:"skills"`
 }
 
@@ -34,6 +34,7 @@ type Skill struct {
 	Source         string                  `json:"source,omitempty"` // managed: artifact URL or "local:<path>"
 	SHA256         string                  `json:"sha256,omitempty"` // managed: artifact hash
 	Repo           string                  `json:"repo,omitempty"`   // delegated: github.com/...
+	Ref            string                  `json:"ref,omitempty"`    // delegated: configured git ref
 	Targets        map[string]TargetRecord `json:"targets,omitempty"`
 	Adopted        bool                    `json:"adopted,omitempty"`
 	InstalledAt    time.Time               `json:"installed_at"`

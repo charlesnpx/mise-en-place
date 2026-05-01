@@ -5,13 +5,18 @@
 # not have access to private/team-only delegated repos; optional delegated skills
 # are skipped by `mise-en-place install --all` unless --strict is supplied.
 
-managed: []
-  # - humanizer
-  # - review-pr
-  # - ado-query
-  # - visual-qa
+managed:
+  - humanizer
+  - visual-qa
+  - rebase-up
+  - review-pr
 
 delegated:
+  ado-query:
+    repo: github.com/charlesnpx/ado-query
+    ref: main
+    visibility: private
+    optional: true
   browse:
     repo: github.com/charlesnpx/browse
     ref: main

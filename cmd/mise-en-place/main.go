@@ -189,7 +189,15 @@ func newDoctorCmd() *cobra.Command {
 		Use:   "doctor",
 		Short: "Report drift, integrity, and collision issues",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return errStub("doctor")
+			reg, err := loadRegistry()
+			if err != nil {
+				return err
+			}
+			return install.Doctor(os.Stdout, reg, install.Options{
+				Target:           "all",
+				RunningInstaller: Version,
+				ManifestSchema:   ManifestSchema,
+			})
 		},
 	}
 }

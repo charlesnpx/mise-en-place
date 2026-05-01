@@ -59,7 +59,7 @@ func One(name string, reg *config.Registry, opts Options) error {
 		return fmt.Errorf("unknown skill: %s (not in registry.yaml)", name)
 	}
 	if kind == "delegated" {
-		return delegatedInstallError(name, reg.Delegated[name])
+		return installDelegated(name, reg.Delegated[name], opts)
 	}
 	return installManaged(name, opts)
 }
@@ -82,9 +82,8 @@ func All(reg *config.Registry, opts Options) error {
 	sort.Strings(dnames)
 	for _, name := range dnames {
 		d := reg.Delegated[name]
-		err := delegatedInstallError(name, d)
-		if !opts.Strict && errors.Is(err, errDelegatedNotImplemented) {
-			fmt.Fprintf(os.Stderr, "skip: %s: %v\n", name, err)
+		err := installDelegated(name, d, opts)
+		if err == nil {
 			continue
 		}
 		if opts.Strict || !d.IsOptional() {
@@ -99,14 +98,6 @@ func All(reg *config.Registry, opts Options) error {
 	return nil
 }
 
-func delegatedInstallError(name string, d config.DelegatedRepo) error {
-	message := fmt.Sprintf("for %s", name)
-	if d.IsPrivate() {
-		message += fmt.Sprintf("; %s is marked private/team-only, but access has not been checked yet", name)
-	}
-	return fmt.Errorf("%w %s", errDelegatedNotImplemented, message)
-}
-
 // Upgrade reinstalls a single skill at the current source version.
 func Upgrade(name string, reg *config.Registry, opts Options) error {
 	if err := Uninstall(name); err != nil && !errors.Is(err, errNotInstalled) {
@@ -115,17 +106,14 @@ func Upgrade(name string, reg *config.Registry, opts Options) error {
 	return One(name, reg, opts)
 }
 
-// UpgradeAll reinstalls every currently-installed managed skill.
+// UpgradeAll reinstalls every currently-installed skill.
 func UpgradeAll(reg *config.Registry, opts Options) error {
 	s, err := state.Load()
 	if err != nil {
 		return err
 	}
 	var errs []string
-	for name, sk := range s.Skills {
-		if sk.Kind != "managed" {
-			continue
-		}
+	for name := range s.Skills {
 		if reg.Kind(name) == "" {
 			continue
 		}
@@ -140,10 +128,25 @@ func UpgradeAll(reg *config.Registry, opts Options) error {
 }
 
 var errNotInstalled = errors.New("skill is not installed")
-var errDelegatedNotImplemented = errors.New("delegated install unavailable")
 
 // Uninstall removes an installed skill from disk and state.
 func Uninstall(name string) error {
+	s, err := state.Load()
+	if err != nil {
+		return err
+	}
+	sk, ok := s.Skills[name]
+	if !ok {
+		return fmt.Errorf("%w: %s", errNotInstalled, name)
+	}
+	if sk.Kind == "delegated" {
+		return uninstallDelegated(name, sk)
+	}
+
+	return hashSafeRemoveInstalled(name, sk)
+}
+
+func hashSafeRemoveInstalled(name string, sk state.Skill) error {
 	lock, err := state.Lock()
 	if err != nil {
 		return err
@@ -154,14 +157,6 @@ func Uninstall(name string) error {
 	if err != nil {
 		return err
 	}
-	sk, ok := s.Skills[name]
-	if !ok {
-		return fmt.Errorf("%w: %s", errNotInstalled, name)
-	}
-	if sk.Kind == "delegated" {
-		return errors.New("delegated uninstall not yet implemented in this build")
-	}
-
 	for targetName, tr := range sk.Targets {
 		for _, fr := range tr.Files {
 			cur, err := artifact.SHA256File(fr.Path)
