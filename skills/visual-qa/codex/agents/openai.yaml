@@ -1,0 +1,4 @@
+interface:
+  display_name: "Visual QA"
+  short_description: "Compare PDFs to design references"
+  default_prompt: "Use $visual-qa to compare this reference image against the generated PDF and fix the visual differences."
