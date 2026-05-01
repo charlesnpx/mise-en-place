@@ -1,8 +1,9 @@
 # registry.yaml — declares which skills mise-en-place knows about.
 #
 # managed: skills authored in this repo under skills/<name>/.
-# delegated: polyrepo skills with their own install-skill.sh; mise-en-place
-# clones them at the pinned ref and runs that script.
+# delegated: polyrepo skills with their own install-skill.sh. Public users may
+# not have access to private/team-only delegated repos; optional delegated skills
+# are skipped by `mise-en-place install --all` unless --strict is supplied.
 
 managed: []
   # - humanizer
@@ -14,12 +15,20 @@ delegated:
   browse:
     repo: github.com/charlesnpx/browse
     ref: main
+    visibility: private
+    optional: true
   keyframe:
     repo: github.com/charlesnpx/keyframe
     ref: main
+    visibility: public
+    optional: false
   convo-relay:
     repo: github.com/charlesnpx/convo-relay
     ref: main
+    visibility: private
+    optional: true
   convo-porter:
     repo: github.com/charlesnpx/convo-porter
     ref: main
+    visibility: public
+    optional: false

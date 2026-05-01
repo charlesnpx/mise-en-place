@@ -17,8 +17,23 @@ type Registry struct {
 
 // DelegatedRepo pins a polyrepo skill to a specific tag.
 type DelegatedRepo struct {
-	Repo string `yaml:"repo"`
-	Ref  string `yaml:"ref"`
+	Repo       string `yaml:"repo"`
+	Ref        string `yaml:"ref"`
+	Visibility string `yaml:"visibility"` // public | private; defaults to public
+	Optional   bool   `yaml:"optional"`   // optional delegated repos are skipped by install --all unless --strict
+}
+
+// IsPrivate reports whether the registry explicitly marks the delegated repo
+// private/team-only.
+func (d DelegatedRepo) IsPrivate() bool {
+	return d.Visibility == "private"
+}
+
+// IsOptional reports whether install --all may skip this delegated repo without
+// failing the whole run. Private delegated repos should almost always be optional
+// in a public registry.
+func (d DelegatedRepo) IsOptional() bool {
+	return d.Optional
 }
 
 // LoadRegistry reads registry.yaml from disk.
@@ -48,6 +63,9 @@ func (r *Registry) Validate() error {
 		}
 		if d.Ref == "" {
 			return fmt.Errorf("registry.yaml: delegated %s missing ref", name)
+		}
+		if d.Visibility != "" && d.Visibility != "public" && d.Visibility != "private" {
+			return fmt.Errorf("registry.yaml: delegated %s has invalid visibility %q (expected public or private)", name, d.Visibility)
 		}
 	}
 	return nil

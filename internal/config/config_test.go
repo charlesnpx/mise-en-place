@@ -47,10 +47,10 @@ targets:
 func TestLoadSkillManifest_MissingFields(t *testing.T) {
 	dir := t.TempDir()
 	cases := map[string]string{
-		"no name":            "version: 1.0.0\nmanifest_schema: 1\nmin_installer: \"0.1.0\"\ntargets:\n  claude:\n    type: command\n    payload: a\n    install_to: b\n",
-		"no min_installer":   "name: x\nversion: 1.0.0\nmanifest_schema: 1\ntargets:\n  claude:\n    type: command\n    payload: a\n    install_to: b\n",
-		"no targets":         "name: x\nversion: 1.0.0\nmanifest_schema: 1\nmin_installer: \"0.1.0\"\n",
-		"bad target type":    "name: x\nversion: 1.0.0\nmanifest_schema: 1\nmin_installer: \"0.1.0\"\ntargets:\n  claude:\n    type: bogus\n    payload: a\n    install_to: b\n",
+		"no name":          "version: 1.0.0\nmanifest_schema: 1\nmin_installer: \"0.1.0\"\ntargets:\n  claude:\n    type: command\n    payload: a\n    install_to: b\n",
+		"no min_installer": "name: x\nversion: 1.0.0\nmanifest_schema: 1\ntargets:\n  claude:\n    type: command\n    payload: a\n    install_to: b\n",
+		"no targets":       "name: x\nversion: 1.0.0\nmanifest_schema: 1\nmin_installer: \"0.1.0\"\n",
+		"bad target type":  "name: x\nversion: 1.0.0\nmanifest_schema: 1\nmin_installer: \"0.1.0\"\ntargets:\n  claude:\n    type: bogus\n    payload: a\n    install_to: b\n",
 	}
 	for label, body := range cases {
 		t.Run(label, func(t *testing.T) {
@@ -74,6 +74,13 @@ delegated:
   keyframe:
     repo: github.com/charlesnpx/keyframe
     ref: v1.2.0
+    visibility: public
+    optional: false
+  browse:
+    repo: github.com/charlesnpx/browse
+    ref: main
+    visibility: private
+    optional: true
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +97,27 @@ delegated:
 	if r.Kind("keyframe") != "delegated" {
 		t.Errorf("keyframe kind: %s", r.Kind("keyframe"))
 	}
+	if !r.Delegated["browse"].IsPrivate() || !r.Delegated["browse"].IsOptional() {
+		t.Errorf("browse should parse as private optional: %+v", r.Delegated["browse"])
+	}
 	if r.Kind("nope") != "" {
 		t.Errorf("unknown skill should return empty: %q", r.Kind("nope"))
+	}
+}
+
+func TestLoadRegistry_InvalidDelegatedVisibility(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "registry.yaml")
+	if err := os.WriteFile(path, []byte(`
+delegated:
+  browse:
+    repo: github.com/charlesnpx/browse
+    ref: main
+    visibility: team-only
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadRegistry(path); err == nil {
+		t.Fatal("expected invalid visibility to fail validation")
 	}
 }

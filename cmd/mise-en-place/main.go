@@ -84,6 +84,7 @@ func newInstallCmd() *cobra.Command {
 		target string
 		all    bool
 		backup bool
+		strict bool
 	)
 	cmd := &cobra.Command{
 		Use:   "install [skill]",
@@ -98,6 +99,7 @@ func newInstallCmd() *cobra.Command {
 				Backup:           backup,
 				RunningInstaller: Version,
 				ManifestSchema:   ManifestSchema,
+				Strict:           strict,
 			}
 			if all {
 				return install.All(reg, opts)
@@ -111,6 +113,7 @@ func newInstallCmd() *cobra.Command {
 	cmd.Flags().StringVar(&target, "target", "all", "claude | codex | all")
 	cmd.Flags().BoolVar(&all, "all", false, "install every skill in the registry")
 	cmd.Flags().BoolVar(&backup, "backup", false, "rename pre-existing files to *.mise-en-place.bak.<ts>")
+	cmd.Flags().BoolVar(&strict, "strict", false, "fail install --all if optional/private delegated skills cannot be installed")
 	return cmd
 }
 

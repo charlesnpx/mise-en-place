@@ -37,6 +37,7 @@ type Options struct {
 	// SkillsRoot is the on-disk path to the monorepo's skills/ directory.
 	// Defaults to "skills" relative to the working directory.
 	SkillsRoot string
+	Strict     bool // fail install --all when delegated/optional skills cannot be installed
 }
 
 func (o Options) skillsRoot() string {
@@ -58,13 +59,14 @@ func One(name string, reg *config.Registry, opts Options) error {
 		return fmt.Errorf("unknown skill: %s (not in registry.yaml)", name)
 	}
 	if kind == "delegated" {
-		return errors.New("delegated install not yet implemented in this build")
+		return delegatedInstallError(name, reg.Delegated[name])
 	}
 	return installManaged(name, opts)
 }
 
 // All installs every managed skill in the registry. Delegated skills are
-// reported as not yet implemented.
+// skipped by default when optional/private; --strict turns skipped delegated
+// skills into errors.
 func All(reg *config.Registry, opts Options) error {
 	var errs []string
 	for _, name := range reg.Managed {
@@ -72,13 +74,37 @@ func All(reg *config.Registry, opts Options) error {
 			errs = append(errs, fmt.Sprintf("%s: %v", name, err))
 		}
 	}
-	if len(reg.Delegated) > 0 {
-		fmt.Fprintln(os.Stderr, "note: delegated skills skipped (not yet implemented in this build)")
+
+	dnames := make([]string, 0, len(reg.Delegated))
+	for name := range reg.Delegated {
+		dnames = append(dnames, name)
+	}
+	sort.Strings(dnames)
+	for _, name := range dnames {
+		d := reg.Delegated[name]
+		err := delegatedInstallError(name, d)
+		if !opts.Strict && errors.Is(err, errDelegatedNotImplemented) {
+			fmt.Fprintf(os.Stderr, "skip: %s: %v\n", name, err)
+			continue
+		}
+		if opts.Strict || !d.IsOptional() {
+			errs = append(errs, fmt.Sprintf("%s: %v", name, err))
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "skip: %s: %v\n", name, err)
 	}
 	if len(errs) > 0 {
 		return fmt.Errorf("install --all completed with errors:\n  %s", strings.Join(errs, "\n  "))
 	}
 	return nil
+}
+
+func delegatedInstallError(name string, d config.DelegatedRepo) error {
+	message := fmt.Sprintf("for %s", name)
+	if d.IsPrivate() {
+		message += fmt.Sprintf("; %s is marked private/team-only; request repo access for %s or skip it", name, d.Repo)
+	}
+	return fmt.Errorf("%w %s", errDelegatedNotImplemented, message)
 }
 
 // Upgrade reinstalls a single skill at the current source version.
@@ -114,6 +140,7 @@ func UpgradeAll(reg *config.Registry, opts Options) error {
 }
 
 var errNotInstalled = errors.New("skill is not installed")
+var errDelegatedNotImplemented = errors.New("delegated install unavailable")
 
 // Uninstall removes an installed skill from disk and state.
 func Uninstall(name string) error {
@@ -518,6 +545,14 @@ func PrintList(w io.Writer, s *state.State, reg *config.Registry) {
 		if _, ok := s.Skills[n]; ok {
 			marker = "✓ "
 		}
-		fmt.Fprintf(w, "%s%s (delegated %s@%s)\n", marker, n, reg.Delegated[n].Repo, reg.Delegated[n].Ref)
+		d := reg.Delegated[n]
+		attrs := []string{"delegated"}
+		if d.Visibility != "" {
+			attrs = append(attrs, d.Visibility)
+		}
+		if d.Optional {
+			attrs = append(attrs, "optional")
+		}
+		fmt.Fprintf(w, "%s%s (%s %s@%s)\n", marker, n, strings.Join(attrs, ", "), d.Repo, d.Ref)
 	}
 }

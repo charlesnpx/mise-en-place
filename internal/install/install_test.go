@@ -306,3 +306,30 @@ func TestInstall_LeavesLocallyModifiedFileOnUninstall(t *testing.T) {
 		t.Errorf("file contents changed: %q", string(body))
 	}
 }
+
+func TestInstall_DirectDelegatedPrivateMessage(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"browse": {Repo: "github.com/charlesnpx/browse", Ref: "main", Visibility: "private", Optional: true},
+	}}
+	err := One("browse", reg, Options{RunningInstaller: "0.1.0", ManifestSchema: 1})
+	if err == nil {
+		t.Fatal("expected delegated install error")
+	}
+	if !strings.Contains(err.Error(), "private/team-only") || !strings.Contains(err.Error(), "request repo access") {
+		t.Fatalf("expected private access hint, got: %v", err)
+	}
+}
+
+func TestInstallAll_SkipsOptionalDelegatedButFailsStrict(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"browse": {Repo: "github.com/charlesnpx/browse", Ref: "main", Visibility: "private", Optional: true},
+	}}
+	if err := All(reg, Options{RunningInstaller: "0.1.0", ManifestSchema: 1}); err != nil {
+		t.Fatalf("optional delegated skill should be skipped by default: %v", err)
+	}
+	if err := All(reg, Options{RunningInstaller: "0.1.0", ManifestSchema: 1, Strict: true}); err == nil {
+		t.Fatal("expected strict install --all to fail on skipped delegated skill")
+	}
+}
