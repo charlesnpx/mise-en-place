@@ -51,11 +51,23 @@ func installDelegated(name string, repo config.DelegatedRepo, opts Options) erro
 	if err != nil {
 		return err
 	}
-	planned, err := runDelegatedInstaller(installer, name, "plan", target, false)
+	if _, err := runDelegatedInstaller(installer, name, "plan", target, false, ""); err != nil {
+		return err
+	}
+	stageRoot, err := os.MkdirTemp("", "mise-en-place-delegated-*")
 	if err != nil {
 		return err
 	}
-	plan, err := delegatedPlan(planned)
+	if stageRoot, err = filepath.EvalSymlinks(stageRoot); err != nil {
+		return err
+	}
+	defer os.RemoveAll(stageRoot)
+
+	staged, err := runDelegatedInstaller(installer, name, "install", target, true, stageRoot)
+	if err != nil {
+		return err
+	}
+	plan, err := delegatedStagedPlan(staged, stageRoot)
 	if err != nil {
 		return err
 	}
@@ -73,22 +85,19 @@ func installDelegated(name string, repo config.DelegatedRepo, opts Options) erro
 	if err := checkCollisions(s, name, plan); err != nil {
 		return err
 	}
-	if err := checkUnmanaged(s, name, plan, opts.Backup); err != nil {
-		return err
-	}
-
-	installed, err := runDelegatedInstaller(installer, name, "install", target, true)
+	applied, skipped, err := applyOwnershipPlan(s, name, plan, opts.Backup)
 	if err != nil {
 		return err
 	}
-	files, err := delegatedRecordFiles(installed)
+
+	files, err := recordFiles(applied)
 	if err != nil {
 		return err
 	}
 
 	s.Skills[name] = state.Skill{
 		Kind:        "delegated",
-		Version:     installed.Version,
+		Version:     staged.Version,
 		Repo:        repo.Repo,
 		Ref:         repo.Ref,
 		Targets:     files,
@@ -100,13 +109,16 @@ func installDelegated(name string, repo config.DelegatedRepo, opts Options) erro
 	_ = state.AppendHistory(state.HistoryEvent{
 		Op:      "install",
 		Skill:   name,
-		Version: installed.Version,
-		Targets: delegatedTargetNames(installed.Targets),
+		Version: staged.Version,
+		Targets: delegatedTargetNames(staged.Targets),
 	})
-	for _, warning := range installed.Warnings {
+	for _, warning := range staged.Warnings {
 		fmt.Fprintf(os.Stderr, "warn: %s: %s\n", name, warning)
 	}
-	fmt.Printf("installed %s %s (%s delegated)\n", name, installed.Version, strings.Join(delegatedTargetNames(installed.Targets), ", "))
+	fmt.Printf("installed %s %s (%s delegated)\n", name, staged.Version, strings.Join(delegatedTargetNames(staged.Targets), ", "))
+	if skipped > 0 {
+		fmt.Fprintf(os.Stderr, "partial install: skipped %d divergent file(s); skipped files were not recorded in state\n", skipped)
+	}
 	return nil
 }
 
@@ -116,7 +128,7 @@ func uninstallDelegated(name string, sk state.Skill) error {
 		repoDir, err := prepareDelegatedRepo(name, repo)
 		if err == nil {
 			if installer, err := delegatedInstaller(repoDir); err == nil {
-				if _, err := runDelegatedInstaller(installer, name, "uninstall", "all", false); err == nil {
+				if _, err := runDelegatedInstaller(installer, name, "uninstall", "all", false, ""); err == nil {
 					return removeDelegatedState(name)
 				} else {
 					fmt.Fprintf(os.Stderr, "warn: delegated uninstall failed for %s, falling back to hash-safe local removal: %v\n", name, err)
@@ -231,8 +243,19 @@ func gitOutput(dir string, args ...string) ([]byte, error) {
 	return cmd.CombinedOutput()
 }
 
-func runDelegatedInstaller(installer, skillName, operation, target string, requireHashes bool) (*delegatedResult, error) {
+func runDelegatedInstaller(installer, skillName, operation, target string, requireHashes bool, installRoot string) (*delegatedResult, error) {
 	args := []string{"--" + operation, "--target", target, "--json"}
+	if installRoot != "" {
+		absRoot, err := filepath.Abs(installRoot)
+		if err != nil {
+			return nil, err
+		}
+		if absRoot, err = filepath.EvalSymlinks(absRoot); err != nil {
+			return nil, err
+		}
+		args = append(args, "--install-root", absRoot)
+		installRoot = absRoot
+	}
 	cmd := exec.Command(installer, args...)
 	cmd.Dir = filepath.Dir(installer)
 	var stderr bytes.Buffer
@@ -247,6 +270,11 @@ func runDelegatedInstaller(installer, skillName, operation, target string, requi
 	}
 	if err := validateDelegatedResult(&result, skillName, operation, requireHashes); err != nil {
 		return nil, err
+	}
+	if installRoot != "" {
+		if err := validateDelegatedPathsInside(&result, skillName, installRoot); err != nil {
+			return nil, err
+		}
 	}
 	return &result, nil
 }
@@ -283,6 +311,50 @@ func validateDelegatedResult(result *delegatedResult, skillName, operation strin
 	return nil
 }
 
+func validateDelegatedPathsInside(result *delegatedResult, skillName, root string) error {
+	for targetName, target := range result.Targets {
+		for _, file := range target.Files {
+			rel, err := filepath.Rel(root, file.Path)
+			if err != nil {
+				return fmt.Errorf("delegated %s/%s: validate staged path %s: %w", skillName, targetName, file.Path, err)
+			}
+			if rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." || filepath.IsAbs(rel) {
+				return fmt.Errorf("delegated %s/%s: staged path escapes --install-root: %s", skillName, targetName, file.Path)
+			}
+		}
+	}
+	return nil
+}
+
+func delegatedStagedPlan(result *delegatedResult, stageRoot string) ([]fileOp, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+	if home, err = filepath.EvalSymlinks(home); err != nil {
+		return nil, err
+	}
+	var plan []fileOp
+	for targetName, target := range result.Targets {
+		for _, file := range target.Files {
+			rel, err := filepath.Rel(stageRoot, file.Path)
+			if err != nil {
+				return nil, err
+			}
+			if rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." || filepath.IsAbs(rel) {
+				return nil, fmt.Errorf("delegated staged path escapes --install-root: %s", file.Path)
+			}
+			plan = append(plan, fileOp{
+				target: targetName,
+				src:    file.Path,
+				dst:    filepath.Join(home, rel),
+				sha256: file.SHA256,
+			})
+		}
+	}
+	return plan, nil
+}
+
 func delegatedPlan(result *delegatedResult) ([]fileOp, error) {
 	var plan []fileOp
 	for targetName, target := range result.Targets {
@@ -291,18 +363,6 @@ func delegatedPlan(result *delegatedResult) ([]fileOp, error) {
 		}
 	}
 	return plan, nil
-}
-
-func delegatedRecordFiles(result *delegatedResult) (map[string]state.TargetRecord, error) {
-	out := map[string]state.TargetRecord{}
-	for targetName, target := range result.Targets {
-		rec := out[targetName]
-		for _, file := range target.Files {
-			rec.Files = append(rec.Files, state.FileRecord{Path: file.Path, SHA256: file.SHA256})
-		}
-		out[targetName] = rec
-	}
-	return out, nil
 }
 
 func delegatedTargetNames(targets map[string]delegatedTargetResult) []string {

@@ -108,15 +108,18 @@ func newInstallCmd() *cobra.Command {
 			if all {
 				return install.All(source.Registry, opts)
 			}
-			if len(args) != 1 {
-				return errors.New("specify a skill name or --all")
+			if len(args) == 0 {
+				return install.All(source.Registry, opts)
+			}
+			if len(args) > 1 {
+				return errors.New("specify at most one skill name")
 			}
 			return install.One(args[0], source.Registry, opts)
 		},
 	}
 	cmd.Flags().StringVar(&target, "target", "all", "claude | codex | all")
 	cmd.Flags().BoolVar(&all, "all", false, "install every skill in the registry")
-	cmd.Flags().BoolVar(&backup, "backup", false, "rename pre-existing files to *.mise-en-place.bak.<ts>")
+	cmd.Flags().BoolVar(&backup, "backup", false, "back up divergent existing files to <filename>.backup and overwrite")
 	cmd.Flags().BoolVar(&strict, "strict", false, "fail install --all if optional/private delegated skills cannot be installed")
 	return cmd
 }

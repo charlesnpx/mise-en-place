@@ -6,8 +6,8 @@
 //  2. Validate min_installer ≤ running CLI version.
 //  3. Compute the intended file set across requested targets.
 //  4. Refuse cross-skill path collisions against state.json.
-//  5. Refuse unmanaged-file collisions unless --backup.
-//  6. Copy files into place.
+//  5. Compare existing files and either skip, prompt, or back them up.
+//  6. Copy changed files into place.
 //  7. Update state.json (atomic rename), append history.jsonl.
 package install
 
@@ -17,6 +17,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -267,15 +268,12 @@ func installManaged(name string, opts Options) error {
 	if err := checkCollisions(s, name, plan); err != nil {
 		return err
 	}
-	if err := checkUnmanaged(s, name, plan, opts.Backup); err != nil {
+	applied, skipped, err := applyOwnershipPlan(s, name, plan, opts.Backup)
+	if err != nil {
 		return err
 	}
 
-	if err := applyPlan(plan); err != nil {
-		return err
-	}
-
-	files, err := recordFiles(plan)
+	files, err := recordFiles(applied)
 	if err != nil {
 		return err
 	}
@@ -300,6 +298,9 @@ func installManaged(name string, opts Options) error {
 	})
 
 	fmt.Printf("installed %s %s (%s)\n", name, manifest.Version, strings.Join(targetNames(requested), ", "))
+	if skipped > 0 {
+		fmt.Fprintf(os.Stderr, "partial install: skipped %d divergent file(s); skipped files were not recorded in state\n", skipped)
+	}
 	_ = tarball // hash already captured; tarball not retained on disk in this build
 	return nil
 }
@@ -409,7 +410,7 @@ func checkCollisions(s *state.State, self string, plan []fileOp) error {
 	return nil
 }
 
-func checkUnmanaged(s *state.State, self string, plan []fileOp, backup bool) error {
+func checkDestinationConflicts(s *state.State, self string, plan []fileOp) error {
 	owned := map[string]bool{}
 	if sk, ok := s.Skills[self]; ok {
 		for _, tr := range sk.Targets {
@@ -419,39 +420,182 @@ func checkUnmanaged(s *state.State, self string, plan []fileOp, backup bool) err
 		}
 	}
 	for _, op := range plan {
-		if owned[op.dst] {
-			continue
-		}
 		if _, err := os.Stat(op.dst); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
 			return err
 		}
-		if backup {
-			ts := time.Now().UTC().Format("20060102-150405")
-			bak := fmt.Sprintf("%s.mise-en-place.bak.%s", op.dst, ts)
-			if err := os.Rename(op.dst, bak); err != nil {
-				return fmt.Errorf("backup %s: %w", op.dst, err)
+		if op.sha256 != "" {
+			currentHash, err := artifact.SHA256File(op.dst)
+			if err != nil {
+				return fmt.Errorf("hash existing file %s: %w", op.dst, err)
 			}
-			fmt.Fprintf(os.Stderr, "backed up existing %s -> %s\n", op.dst, bak)
+			if currentHash == op.sha256 {
+				continue
+			}
+		} else if owned[op.dst] {
 			continue
 		}
-		return fmt.Errorf("unmanaged file at %s (use --backup to move it aside, or run `mise-en-place adopt`)", op.dst)
+		if owned[op.dst] {
+			return fmt.Errorf("owned file differs at %s", op.dst)
+		}
+		return fmt.Errorf("existing unmanaged file differs at %s", op.dst)
 	}
 	return nil
 }
 
-func applyPlan(plan []fileOp) error {
-	for _, op := range plan {
-		if err := os.MkdirAll(filepath.Dir(op.dst), 0o755); err != nil {
-			return err
-		}
-		if err := copyFile(op.src, op.dst); err != nil {
-			return fmt.Errorf("copy %s -> %s: %w", op.src, op.dst, err)
+func applyOwnershipPlan(s *state.State, self string, plan []fileOp, backup bool) ([]fileOp, int, error) {
+	owned := map[string]bool{}
+	if sk, ok := s.Skills[self]; ok {
+		for _, tr := range sk.Targets {
+			for _, fr := range tr.Files {
+				owned[fr.Path] = true
+			}
 		}
 	}
+	var applied []fileOp
+	skipped := 0
+	for _, op := range plan {
+		if _, err := os.Stat(op.dst); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				if err := installPlannedFile(op); err != nil {
+					return nil, skipped, err
+				}
+				applied = append(applied, op)
+				continue
+			}
+			return nil, skipped, err
+		}
+
+		currentHash, err := artifact.SHA256File(op.dst)
+		if err != nil {
+			return nil, skipped, fmt.Errorf("hash existing file %s: %w", op.dst, err)
+		}
+		if currentHash == op.sha256 {
+			fmt.Printf("Skipping, skill up to date: %s\n", op.dst)
+			applied = append(applied, op)
+			continue
+		}
+
+		if backup {
+			if err := backupExisting(op.dst); err != nil {
+				return nil, skipped, err
+			}
+			if err := installPlannedFile(op); err != nil {
+				return nil, skipped, err
+			}
+			applied = append(applied, op)
+			continue
+		}
+
+		if !isInteractiveStdin() {
+			ownerHint := "existing"
+			if !owned[op.dst] {
+				ownerHint = "unmanaged existing"
+			}
+			return nil, skipped, fmt.Errorf("%s file differs at %s (run in a terminal to choose overwrite, backup, or skip; or pass --backup to back up and overwrite)", ownerHint, op.dst)
+		}
+
+		printPlannedDiff(op)
+		action, err := promptDivergentAction(op.dst)
+		if err != nil {
+			return nil, skipped, err
+		}
+		switch action {
+		case "overwrite":
+			if err := installPlannedFile(op); err != nil {
+				return nil, skipped, err
+			}
+			applied = append(applied, op)
+		case "backup":
+			if err := backupExisting(op.dst); err != nil {
+				return nil, skipped, err
+			}
+			if err := installPlannedFile(op); err != nil {
+				return nil, skipped, err
+			}
+			applied = append(applied, op)
+		case "skip":
+			fmt.Fprintf(os.Stderr, "skipped divergent file: %s\n", op.dst)
+			skipped++
+			continue
+		default:
+			return nil, skipped, fmt.Errorf("unknown install action %q", action)
+		}
+	}
+	return applied, skipped, nil
+}
+
+func installPlannedFile(op fileOp) error {
+	if err := os.MkdirAll(filepath.Dir(op.dst), 0o755); err != nil {
+		return err
+	}
+	if err := copyFile(op.src, op.dst); err != nil {
+		return fmt.Errorf("copy %s -> %s: %w", op.src, op.dst, err)
+	}
 	return nil
+}
+
+func backupExisting(path string) error {
+	bak := nextBackupPath(path)
+	if err := os.Rename(path, bak); err != nil {
+		return fmt.Errorf("backup %s: %w", path, err)
+	}
+	fmt.Fprintf(os.Stderr, "backed up existing %s -> %s\n", path, bak)
+	return nil
+}
+
+func nextBackupPath(path string) string {
+	base := path + ".backup"
+	if _, err := os.Stat(base); errors.Is(err, os.ErrNotExist) {
+		return base
+	}
+	for i := 1; ; i++ {
+		candidate := fmt.Sprintf("%s.%d", base, i)
+		if _, err := os.Stat(candidate); errors.Is(err, os.ErrNotExist) {
+			return candidate
+		}
+	}
+}
+
+func isInteractiveStdin() bool {
+	info, err := os.Stdin.Stat()
+	return err == nil && (info.Mode()&os.ModeCharDevice) != 0
+}
+
+func printPlannedDiff(op fileOp) {
+	fmt.Fprintf(os.Stderr, "Existing file differs: %s\n", op.dst)
+	out, err := exec.Command("diff", "-u", "--label", "existing", "--label", "planned", op.dst, op.src).CombinedOutput()
+	if len(out) > 0 {
+		fmt.Fprint(os.Stderr, string(out))
+		return
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "diff unavailable for %s: %v\n", op.dst, err)
+		return
+	}
+	fmt.Fprintln(os.Stderr, "(files differ, but no text diff was produced)")
+}
+
+func promptDivergentAction(path string) (string, error) {
+	for {
+		fmt.Fprintf(os.Stderr, "Choose action for %s [overwrite/backup/skip]: ", path)
+		var answer string
+		if _, err := fmt.Fscan(os.Stdin, &answer); err != nil {
+			return "", err
+		}
+		switch strings.ToLower(strings.TrimSpace(answer)) {
+		case "overwrite", "o":
+			return "overwrite", nil
+		case "backup", "b":
+			return "backup", nil
+		case "skip", "s":
+			return "skip", nil
+		default:
+			fmt.Fprintln(os.Stderr, "Please type overwrite, backup, or skip.")
+		}
+	}
 }
 
 func copyFile(src, dst string) error {
