@@ -5,11 +5,31 @@ sync the dual-target skills authored across both hosts.
 
 ## Install
 
+For macOS or Ubuntu/Linux users who do **not** have Go installed, use the
+prebuilt binary installer:
+
 ```sh
-brew tap charlesnpx/tap && brew install mise-en-place
-# or
+curl -fsSL https://raw.githubusercontent.com/charlesnpx/mise-en-place/main/install.sh | bash
+```
+
+The installer downloads the latest GitHub Release for your OS/architecture and
+installs `mise-en-place` to `~/.local/bin`. If that directory is not on your
+`PATH`, the installer prints the shell snippet to add.
+
+To install a specific version:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/charlesnpx/mise-en-place/main/install.sh \
+  | MISE_EN_PLACE_VERSION=v0.1.0 bash
+```
+
+For developers who already have Go installed:
+
+```sh
 go install github.com/charlesnpx/mise-en-place/cmd/mise-en-place@latest
 ```
+
+If using `go install`, make sure `$(go env GOPATH)/bin` is on your `PATH`.
 
 ## Quick start
 
@@ -54,6 +74,26 @@ skills; private delegated skills are intentionally optional. The intended UX is:
 The current build has the metadata and skip/error behavior in place. Until
 delegated repo cloning/running `install-skill.sh` is implemented, `install --all`
 skips all delegated skills by default and `--strict` fails on them.
+
+## Releases
+
+CLI releases are tagged as normal semver tags:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Pushing a `v*.*.*` tag runs GitHub Actions + GoReleaser and publishes prebuilt
+archives for:
+
+- macOS arm64
+- macOS x86_64
+- Linux arm64
+- Linux x86_64
+
+Skill version tags should use a distinct namespace, for example
+`skill/humanizer/v2.3.0`, so they do not trigger CLI releases.
 
 ## State
 
