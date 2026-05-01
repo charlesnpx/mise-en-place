@@ -43,6 +43,11 @@ mise-en-place upgrade --all
 mise-en-place doctor
 ```
 
+Release binaries are self-contained. On first use, `mise-en-place` writes its
+bundled default registry and managed skill payloads to `~/.mise-en-place/`, so
+commands work from any directory. Developers can set `MISE_EN_PLACE_HOME` to
+point at another registry/skills tree while testing local changes.
+
 ## Concepts
 
 - **Managed skills** live in this repo under `skills/<name>/` with a
