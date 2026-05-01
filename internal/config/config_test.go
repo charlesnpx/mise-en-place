@@ -1,0 +1,96 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestLoadSkillManifest_Valid(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "skill.yaml")
+	if err := os.WriteFile(path, []byte(`
+name: humanizer
+version: 2.3.0
+manifest_schema: 1
+min_installer: "0.1.0"
+targets:
+  claude:
+    type: command
+    payload: payload/claude/humanizer.md
+    install_to: ~/.claude/commands/humanizer.md
+  codex:
+    type: skill_dir
+    payload: payload/codex/
+    install_to: ~/.codex/skills/humanizer/
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := LoadSkillManifest(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m.Name != "humanizer" {
+		t.Errorf("name: got %q", m.Name)
+	}
+	if len(m.Targets) != 2 {
+		t.Errorf("expected 2 targets, got %d", len(m.Targets))
+	}
+	if m.Targets["claude"].Type != TargetCommand {
+		t.Errorf("claude target type: %q", m.Targets["claude"].Type)
+	}
+	if m.Targets["codex"].Type != TargetSkillDir {
+		t.Errorf("codex target type: %q", m.Targets["codex"].Type)
+	}
+}
+
+func TestLoadSkillManifest_MissingFields(t *testing.T) {
+	dir := t.TempDir()
+	cases := map[string]string{
+		"no name":            "version: 1.0.0\nmanifest_schema: 1\nmin_installer: \"0.1.0\"\ntargets:\n  claude:\n    type: command\n    payload: a\n    install_to: b\n",
+		"no min_installer":   "name: x\nversion: 1.0.0\nmanifest_schema: 1\ntargets:\n  claude:\n    type: command\n    payload: a\n    install_to: b\n",
+		"no targets":         "name: x\nversion: 1.0.0\nmanifest_schema: 1\nmin_installer: \"0.1.0\"\n",
+		"bad target type":    "name: x\nversion: 1.0.0\nmanifest_schema: 1\nmin_installer: \"0.1.0\"\ntargets:\n  claude:\n    type: bogus\n    payload: a\n    install_to: b\n",
+	}
+	for label, body := range cases {
+		t.Run(label, func(t *testing.T) {
+			path := filepath.Join(dir, label+".yaml")
+			_ = os.WriteFile(path, []byte(body), 0o644)
+			if _, err := LoadSkillManifest(path); err == nil {
+				t.Fatalf("expected error for %s, got nil", label)
+			}
+		})
+	}
+}
+
+func TestLoadRegistry_Valid(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "registry.yaml")
+	if err := os.WriteFile(path, []byte(`
+managed:
+  - humanizer
+  - review-pr
+delegated:
+  keyframe:
+    repo: github.com/charlesnpx/keyframe
+    ref: v1.2.0
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r, err := LoadRegistry(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(r.Managed) != 2 {
+		t.Errorf("managed: got %v", r.Managed)
+	}
+	if r.Kind("humanizer") != "managed" {
+		t.Errorf("humanizer kind: %s", r.Kind("humanizer"))
+	}
+	if r.Kind("keyframe") != "delegated" {
+		t.Errorf("keyframe kind: %s", r.Kind("keyframe"))
+	}
+	if r.Kind("nope") != "" {
+		t.Errorf("unknown skill should return empty: %q", r.Kind("nope"))
+	}
+}

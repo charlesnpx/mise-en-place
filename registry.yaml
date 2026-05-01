@@ -1,0 +1,25 @@
+# registry.yaml — declares which skills mise-en-place knows about.
+#
+# managed: skills authored in this repo under skills/<name>/.
+# delegated: polyrepo skills with their own install-skill.sh; mise-en-place
+# clones them at the pinned ref and runs that script.
+
+managed: []
+  # - humanizer
+  # - review-pr
+  # - ado-query
+  # - visual-qa
+
+delegated:
+  browse:
+    repo: github.com/charlesnpx/browse
+    ref: main
+  keyframe:
+    repo: github.com/charlesnpx/keyframe
+    ref: main
+  convo-relay:
+    repo: github.com/charlesnpx/convo-relay
+    ref: main
+  convo-porter:
+    repo: github.com/charlesnpx/convo-porter
+    ref: main
