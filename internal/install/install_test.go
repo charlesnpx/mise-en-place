@@ -2,6 +2,7 @@ package install
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -316,7 +317,7 @@ func TestInstall_DirectDelegatedPrivateMessage(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected delegated install error")
 	}
-	if !strings.Contains(err.Error(), "private/team-only") || !strings.Contains(err.Error(), "access has not been checked") {
+	if !strings.Contains(err.Error(), "private/team-only") || !strings.Contains(err.Error(), "authentication") {
 		t.Fatalf("expected private metadata hint, got: %v", err)
 	}
 }
@@ -331,5 +332,207 @@ func TestInstallAll_SkipsOptionalDelegatedButFailsStrict(t *testing.T) {
 	}
 	if err := All(reg, Options{RunningInstaller: "0.1.0", ManifestSchema: 1, Strict: true}); err == nil {
 		t.Fatal("expected strict install --all to fail on skipped delegated skill")
+	}
+}
+
+func writeDelegatedRepo(t *testing.T, root, name string, behavior string) string {
+	t.Helper()
+	repo := filepath.Join(root, name+"-repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := `#!/bin/sh
+set -eu
+op=install
+target=all
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --plan) op=plan ;;
+    --install) op=install ;;
+    --uninstall) op=uninstall ;;
+    --target) shift; target="$1" ;;
+    --json) ;;
+  esac
+  shift
+done
+log="$HOME/installer.log"
+echo "$op:$target" >> "$log"
+file="$HOME/.codex/skills/` + name + `/SKILL.md"
+case "` + behavior + `" in
+  bad-json)
+    echo "not json"
+    exit 0
+    ;;
+  wrong-name)
+    json_name="wrong"
+    ;;
+  *)
+    json_name="` + name + `"
+    ;;
+esac
+if [ "$op" = "install" ]; then
+  mkdir -p "$(dirname "$file")"
+  printf '# delegated ` + name + `\n' > "$file"
+fi
+if [ "$op" = "uninstall" ]; then
+  rm -f "$file"
+fi
+sha=""
+if [ -f "$file" ]; then
+  sha=$(shasum -a 256 "$file" | awk '{print $1}')
+fi
+if [ "$op" = "install" ]; then
+  printf '{"schema":1,"name":"%s","version":"0.2.0","operation":"%s","kind":"delegated","targets":{"codex":{"files":[{"path":"%s","sha256":"%s"}]}},"warnings":[]}\n' "$json_name" "$op" "$file" "$sha"
+else
+  printf '{"schema":1,"name":"%s","version":"0.2.0","operation":"%s","kind":"delegated","targets":{"codex":{"files":[{"path":"%s"}]}},"warnings":[]}\n' "$json_name" "$op" "$file"
+fi
+`
+	if err := os.WriteFile(filepath.Join(repo, "install-skill.sh"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run(t, repo, "git", "init", "-b", "main")
+	run(t, repo, "git", "config", "user.email", "test@example.com")
+	run(t, repo, "git", "config", "user.name", "Test")
+	run(t, repo, "git", "add", ".")
+	run(t, repo, "git", "commit", "-m", "init")
+	return repo
+}
+
+func run(t *testing.T, dir string, name string, args ...string) {
+	t.Helper()
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%s %s: %v\n%s", name, strings.Join(args, " "), err, out)
+	}
+}
+
+func TestInstall_DelegatedRunsPlanBeforeInstall(t *testing.T) {
+	home := withFakeHome(t)
+	repo := writeDelegatedRepo(t, home, "delegated", "ok")
+	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"delegated": {Repo: repo, Ref: "main"},
+	}}
+	if err := One("delegated", reg, Options{Target: "codex"}); err != nil {
+		t.Fatalf("install delegated: %v", err)
+	}
+	logBody, err := os.ReadFile(filepath.Join(home, "installer.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(logBody); got != "plan:codex\ninstall:codex\n" {
+		t.Fatalf("unexpected installer order:\n%s", got)
+	}
+	s, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sk := s.Skills["delegated"]
+	if sk.Kind != "delegated" || sk.Repo != repo || sk.Ref != "main" || sk.Version != "0.2.0" {
+		t.Fatalf("bad delegated state: %+v", sk)
+	}
+}
+
+func TestInstall_DelegatedBadJSONAndNameMismatchFail(t *testing.T) {
+	home := withFakeHome(t)
+	badJSON := writeDelegatedRepo(t, home, "badjson", "bad-json")
+	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"badjson": {Repo: badJSON, Ref: "main"},
+	}}
+	if err := One("badjson", reg, Options{Target: "codex"}); err == nil || !strings.Contains(err.Error(), "not JSON") {
+		t.Fatalf("expected JSON error, got %v", err)
+	}
+
+	wrongName := writeDelegatedRepo(t, home, "wrongname", "wrong-name")
+	reg = &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"wrongname": {Repo: wrongName, Ref: "main"},
+	}}
+	if err := One("wrongname", reg, Options{Target: "codex"}); err == nil || !strings.Contains(err.Error(), "name mismatch") {
+		t.Fatalf("expected name mismatch, got %v", err)
+	}
+}
+
+func TestInstall_DelegatedCollisionBlocksBeforeMutation(t *testing.T) {
+	home := withFakeHome(t)
+	repo := writeDelegatedRepo(t, home, "delegated", "ok")
+	file := filepath.Join(home, ".codex", "skills", "delegated", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, []byte("handmade\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"delegated": {Repo: repo, Ref: "main"},
+	}}
+	err := One("delegated", reg, Options{Target: "codex"})
+	if err == nil || !strings.Contains(err.Error(), "unmanaged") {
+		t.Fatalf("expected unmanaged collision, got %v", err)
+	}
+	body, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != "handmade\n" {
+		t.Fatalf("installer mutated file before collision check: %q", string(body))
+	}
+}
+
+func TestInstall_DelegatedUninstallRemovesStateAndFiles(t *testing.T) {
+	home := withFakeHome(t)
+	repo := writeDelegatedRepo(t, home, "delegated", "ok")
+	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"delegated": {Repo: repo, Ref: "main"},
+	}}
+	if err := One("delegated", reg, Options{Target: "codex"}); err != nil {
+		t.Fatalf("install delegated: %v", err)
+	}
+	if err := Uninstall("delegated"); err != nil {
+		t.Fatalf("uninstall delegated: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".codex", "skills", "delegated", "SKILL.md")); err == nil {
+		t.Fatal("delegated file should be removed")
+	}
+	s, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := s.Skills["delegated"]; ok {
+		t.Fatal("delegated state should be removed")
+	}
+}
+
+func TestInstall_DelegatedUpgradeUpdatesState(t *testing.T) {
+	home := withFakeHome(t)
+	repo := writeDelegatedRepo(t, home, "delegated", "ok")
+	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"delegated": {Repo: repo, Ref: "main"},
+	}}
+	if err := One("delegated", reg, Options{Target: "codex"}); err != nil {
+		t.Fatalf("install delegated: %v", err)
+	}
+
+	scriptPath := filepath.Join(repo, "install-skill.sh")
+	body, err := os.ReadFile(scriptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body = []byte(strings.ReplaceAll(string(body), `"version":"0.2.0"`, `"version":"0.3.0"`))
+	if err := os.WriteFile(scriptPath, body, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run(t, repo, "git", "add", ".")
+	run(t, repo, "git", "commit", "-m", "upgrade")
+
+	if err := Upgrade("delegated", reg, Options{Target: "codex"}); err != nil {
+		t.Fatalf("upgrade delegated: %v", err)
+	}
+	s, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Skills["delegated"].Version; got != "0.3.0" {
+		t.Fatalf("expected upgraded version, got %s", got)
 	}
 }

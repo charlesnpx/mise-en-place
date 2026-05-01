@@ -71,9 +71,10 @@ skills; private delegated skills are intentionally optional. The intended UX is:
 - `mise-en-place install --all --strict` — fail if any delegated skill cannot be
   installed.
 
-The current build has the metadata and skip/error behavior in place. Until
-delegated repo cloning/running `install-skill.sh` is implemented, `install --all`
-skips all delegated skills by default and `--strict` fails on them.
+Delegated repos are cloned into `~/.cache/mise-en-place/repos/<skill>/`,
+planned through their installer contract, collision-checked, and then installed.
+Optional delegated failures are warnings for `install --all` unless `--strict`
+is supplied.
 
 ## Delegated repo compatibility contract
 
