@@ -34,7 +34,8 @@ If using `go install`, make sure `$(go env GOPATH)/bin` is on your `PATH`.
 ## Quick start
 
 ```sh
-mise-en-place install --all                       # install available managed skills; skip optional private delegated skills
+mise-en-place install                             # install available skills; skip optional private delegated skills
+mise-en-place install --all                       # explicit alias for installing everything
 mise-en-place install humanizer                   # install one skill (both targets by default)
 mise-en-place install humanizer --target claude   # install only the Claude payload
 mise-en-place list
@@ -81,6 +82,23 @@ planned through their installer contract, collision-checked, and then installed.
 Optional delegated failures are warnings for `install --all` unless `--strict`
 is supplied.
 
+## Existing files
+
+When a destination file already exists, `mise-en-place` compares it with the
+planned skill file:
+
+- Identical files are treated as installed, recorded in state, and left in
+  place.
+- Divergent files prompt in an interactive terminal: `overwrite`, `backup`, or
+  `skip`.
+- `backup` renames the existing file to `<filename>.backup` (or
+  `<filename>.backup.1`, `.backup.2`, and so on) before writing the skill file.
+- In noninteractive shells, divergent files fail with a hint unless `--backup`
+  is supplied. `--backup` performs the backup-and-overwrite flow without
+  prompting.
+- Skipped files are left untouched and are not recorded in state; the rest of
+  the install continues where possible.
+
 ## Delegated repo compatibility contract
 
 Delegated repos are external skill/tool repos that `mise-en-place` orchestrates
@@ -90,6 +108,7 @@ stable installer command that supports this contract:
 ```sh
 ./install-skill.sh --plan --target all --json
 ./install-skill.sh --install --target all --json
+./install-skill.sh --install --target all --json --install-root /tmp/stage
 ./install-skill.sh --uninstall --target all --json
 ```
 
@@ -109,6 +128,9 @@ Required flags:
   supplied.
 - `--uninstall` — remove the files owned by the delegated repo.
 - `--json` — write machine-readable JSON to stdout. Human logs must go to stderr.
+- `--install-root <absolute-dir>` — stage an install under this directory as if
+  it were `$HOME`. `mise-en-place` uses this during delegated installs so it can
+  compare, prompt, back up, write, and record ownership itself.
 
 The JSON shape is intentionally small:
 
@@ -147,15 +169,18 @@ Rules:
 - `operation` is one of `plan`, `install`, or `uninstall`.
 - `kind` must be `delegated`.
 - File paths must be absolute.
+- With `--install-root`, installed file paths in JSON must be absolute paths
+  inside that root, such as `/tmp/stage/.codex/skills/keyframe/SKILL.md`.
 - `sha256` is required after `install`; it is optional for `plan` and
   `uninstall`.
 - stdout must contain only JSON when `--json` is set.
 - The installer may use any internal language/framework; only the flags and JSON
   output are part of the contract.
 
-`mise-en-place` uses `--plan --json` before install to detect path collisions,
-then `--install --json` to perform the delegated install and record installed
-files in state.
+`mise-en-place` uses `--plan --json` for contract validation, then runs
+`--install --json --install-root <tempdir>` to stage the real planned content.
+It maps staged paths back to the user's home directory and applies the same
+ownership, diff, backup, and state flow used for managed skills.
 
 ## Releases
 

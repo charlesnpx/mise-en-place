@@ -20,6 +20,23 @@ func withFakeHome(t *testing.T) string {
 	return dir
 }
 
+func withNonInteractiveStdin(t *testing.T) {
+	t.Helper()
+	original := os.Stdin
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	os.Stdin = r
+	t.Cleanup(func() {
+		os.Stdin = original
+		_ = r.Close()
+	})
+}
+
 // writeFixtureSkill creates a minimal managed skill on disk and returns the
 // path to its directory.
 func writeFixtureSkill(t *testing.T, root, name, claudePath, codexDirPath string) string {
@@ -133,6 +150,7 @@ func TestInstall_TargetFilter(t *testing.T) {
 
 func TestInstall_RefusesUnmanagedFile(t *testing.T) {
 	home := withFakeHome(t)
+	withNonInteractiveStdin(t)
 	skillsRoot := filepath.Join(home, "skills")
 	claudePath := filepath.Join(home, ".claude", "commands", "fixture.md")
 	codexDir := filepath.Join(home, ".codex", "skills", "fixture/")
@@ -195,19 +213,56 @@ func TestInstall_BackupRescuesUnmanagedFile(t *testing.T) {
 	if !strings.Contains(string(body), "claude payload") {
 		t.Errorf("expected new payload, got: %q", string(body))
 	}
-	// A backup with the .mise-en-place.bak. infix exists.
+	// A sibling .backup file exists.
 	entries, err := os.ReadDir(filepath.Dir(claudePath))
 	if err != nil {
 		t.Fatal(err)
 	}
 	found := false
 	for _, e := range entries {
-		if strings.Contains(e.Name(), ".mise-en-place.bak.") {
+		if e.Name() == filepath.Base(claudePath)+".backup" {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected a *.mise-en-place.bak.* file alongside %s", claudePath)
+		t.Errorf("expected a .backup file alongside %s", claudePath)
+	}
+}
+
+func TestInstall_Managed_IdenticalExistingFileIsRecorded(t *testing.T) {
+	home := withFakeHome(t)
+	skillsRoot := filepath.Join(home, "skills")
+	claudePath := filepath.Join(home, ".claude", "commands", "fixture.md")
+	codexDir := filepath.Join(home, ".codex", "skills", "fixture/")
+	skillDir := writeFixtureSkill(t, skillsRoot, "fixture", claudePath, codexDir)
+
+	if err := os.MkdirAll(filepath.Dir(claudePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := os.ReadFile(filepath.Join(skillDir, "payload", "claude", filepath.Base(claudePath)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(claudePath, payload, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	reg := &config.Registry{Managed: []string{"fixture"}}
+	opts := Options{
+		Target:           "claude",
+		RunningInstaller: "0.1.0",
+		ManifestSchema:   1,
+		SkillsRoot:       skillsRoot,
+	}
+	if err := One("fixture", reg, opts); err != nil {
+		t.Fatalf("install identical existing file: %v", err)
+	}
+	s, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Skills["fixture"].Targets["claude"].Files) != 1 {
+		t.Fatalf("expected identical existing file to be recorded, got %+v", s.Skills["fixture"].Targets)
 	}
 }
 
@@ -345,29 +400,32 @@ func writeDelegatedRepo(t *testing.T, root, name string, behavior string) string
 set -eu
 op=install
 target=all
+install_root="$HOME"
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --plan) op=plan ;;
     --install) op=install ;;
     --uninstall) op=uninstall ;;
     --target) shift; target="$1" ;;
+    --install-root) shift; install_root="$1" ;;
     --json) ;;
   esac
   shift
 done
-log="$HOME/installer.log"
+	log="$HOME/installer.log"
 echo "$op:$target" >> "$log"
-file="$HOME/.codex/skills/` + name + `/SKILL.md"
+file="$install_root/.codex/skills/` + name + `/SKILL.md"
+json_name="` + name + `"
 case "` + behavior + `" in
   bad-json)
     echo "not json"
     exit 0
     ;;
+  outside-root)
+    file="$HOME/outside-root/SKILL.md"
+    ;;
   wrong-name)
     json_name="wrong"
-    ;;
-  *)
-    json_name="` + name + `"
     ;;
 esac
 if [ "$op" = "install" ]; then
@@ -455,6 +513,7 @@ func TestInstall_DelegatedBadJSONAndNameMismatchFail(t *testing.T) {
 
 func TestInstall_DelegatedCollisionBlocksBeforeMutation(t *testing.T) {
 	home := withFakeHome(t)
+	withNonInteractiveStdin(t)
 	repo := writeDelegatedRepo(t, home, "delegated", "ok")
 	file := filepath.Join(home, ".codex", "skills", "delegated", "SKILL.md")
 	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
@@ -476,6 +535,18 @@ func TestInstall_DelegatedCollisionBlocksBeforeMutation(t *testing.T) {
 	}
 	if string(body) != "handmade\n" {
 		t.Fatalf("installer mutated file before collision check: %q", string(body))
+	}
+}
+
+func TestInstall_DelegatedRejectsStagedPathOutsideInstallRoot(t *testing.T) {
+	home := withFakeHome(t)
+	repo := writeDelegatedRepo(t, home, "delegated", "outside-root")
+	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"delegated": {Repo: repo, Ref: "main"},
+	}}
+	err := One("delegated", reg, Options{Target: "codex"})
+	if err == nil || !strings.Contains(err.Error(), "escapes --install-root") {
+		t.Fatalf("expected staged path validation failure, got %v", err)
 	}
 }
 

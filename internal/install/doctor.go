@@ -85,7 +85,7 @@ func doctorManaged(w io.Writer, s *state.State, name string, opts Options) error
 	if err := checkCollisions(s, name, plan); err != nil {
 		return err
 	}
-	if err := checkUnmanaged(s, name, plan, false); err != nil {
+	if err := checkDestinationConflicts(s, name, plan); err != nil {
 		return err
 	}
 	fmt.Fprintf(w, "ok: managed %s manifest and destinations\n", name)
@@ -105,7 +105,7 @@ func doctorDelegated(w io.Writer, s *state.State, name string, repo config.Deleg
 	if target == "" {
 		target = "all"
 	}
-	planned, err := runDelegatedInstaller(installer, name, "plan", target, false)
+	planned, err := runDelegatedInstaller(installer, name, "plan", target, false, "")
 	if err != nil {
 		return err
 	}
@@ -116,7 +116,7 @@ func doctorDelegated(w io.Writer, s *state.State, name string, repo config.Deleg
 	if err := checkCollisions(s, name, plan); err != nil {
 		return err
 	}
-	if err := checkUnmanaged(s, name, plan, false); err != nil {
+	if err := checkDestinationConflicts(s, name, plan); err != nil {
 		return err
 	}
 	fmt.Fprintf(w, "ok: delegated %s installer plan contract\n", name)
