@@ -102,7 +102,7 @@ func All(reg *config.Registry, opts Options) error {
 func delegatedInstallError(name string, d config.DelegatedRepo) error {
 	message := fmt.Sprintf("for %s", name)
 	if d.IsPrivate() {
-		message += fmt.Sprintf("; %s is marked private/team-only; request repo access for %s or skip it", name, d.Repo)
+		message += fmt.Sprintf("; %s is marked private/team-only, but access has not been checked yet", name)
 	}
 	return fmt.Errorf("%w %s", errDelegatedNotImplemented, message)
 }

@@ -316,8 +316,8 @@ func TestInstall_DirectDelegatedPrivateMessage(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected delegated install error")
 	}
-	if !strings.Contains(err.Error(), "private/team-only") || !strings.Contains(err.Error(), "request repo access") {
-		t.Fatalf("expected private access hint, got: %v", err)
+	if !strings.Contains(err.Error(), "private/team-only") || !strings.Contains(err.Error(), "access has not been checked") {
+		t.Fatalf("expected private metadata hint, got: %v", err)
 	}
 }
 

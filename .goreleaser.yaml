@@ -23,7 +23,7 @@ builds:
 
 archives:
   - id: default
-    builds:
+    ids:
       - mise-en-place
     name_template: >-
       {{ .ProjectName }}_

@@ -75,6 +75,82 @@ The current build has the metadata and skip/error behavior in place. Until
 delegated repo cloning/running `install-skill.sh` is implemented, `install --all`
 skips all delegated skills by default and `--strict` fails on them.
 
+## Delegated repo compatibility contract
+
+Delegated repos are external skill/tool repos that `mise-en-place` orchestrates
+instead of owning directly. A delegated repo is compatible when it exposes a
+stable installer command that supports this contract:
+
+```sh
+./install-skill.sh --plan --target all --json
+./install-skill.sh --install --target all --json
+./install-skill.sh --uninstall --target all --json
+```
+
+Repos whose primary installer is named differently, such as `convo-porter`, may
+keep that command as a wrapper, but it should expose the same flags. For example:
+
+```sh
+./install.sh --plan --target all --json
+convo-porter install --plan --target all --json
+```
+
+Required flags:
+
+- `--target claude|codex|all` — scope the operation. Default should be `all`.
+- `--plan` — print the files that would be written, without modifying disk.
+- `--install` — install files. This is the default when no operation flag is
+  supplied.
+- `--uninstall` — remove the files owned by the delegated repo.
+- `--json` — write machine-readable JSON to stdout. Human logs must go to stderr.
+
+The JSON shape is intentionally small:
+
+```json
+{
+  "schema": 1,
+  "name": "keyframe",
+  "version": "0.26",
+  "operation": "install",
+  "kind": "delegated",
+  "targets": {
+    "claude": {
+      "files": [
+        {
+          "path": "/Users/alice/.claude/skills/keyframe/SKILL.md",
+          "sha256": "..."
+        }
+      ]
+    },
+    "codex": {
+      "files": [
+        {
+          "path": "/Users/alice/.codex/skills/keyframe/SKILL.md",
+          "sha256": "..."
+        }
+      ]
+    }
+  },
+  "warnings": []
+}
+```
+
+Rules:
+
+- `schema`, `name`, `version`, `operation`, `kind`, and `targets` are required.
+- `operation` is one of `plan`, `install`, or `uninstall`.
+- `kind` must be `delegated`.
+- File paths must be absolute.
+- `sha256` is required after `install`; it is optional for `plan` and
+  `uninstall`.
+- stdout must contain only JSON when `--json` is set.
+- The installer may use any internal language/framework; only the flags and JSON
+  output are part of the contract.
+
+`mise-en-place` uses `--plan --json` before install to detect path collisions,
+then `--install --json` to perform the delegated install and record installed
+files in state.
+
 ## Releases
 
 CLI releases are tagged as normal semver tags:
