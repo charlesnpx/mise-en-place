@@ -33,6 +33,16 @@ delegated:
     ref: main
     visibility: public
     optional: false
+  figma-fetch:
+    repo: github.com/charlesnpx/figma-fetch
+    ref: main
+    visibility: public
+    optional: false
+  miro-fetch:
+    repo: github.com/charlesnpx/miro-fetch
+    ref: main
+    visibility: public
+    optional: false
   convo-relay:
     repo: github.com/charlesnpx/convo-relay
     ref: main
