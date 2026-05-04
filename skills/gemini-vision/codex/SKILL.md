@@ -20,7 +20,7 @@ Delegate visual understanding to Gemini, then report the result faithfully.
 3. Run the helper script from this skill directory:
 
 ```bash
-python scripts/gemini_vision.py --image /path/to/image.png --prompt "Summarize this image." --model pro
+python3 scripts/gemini_vision.py --image /path/to/image.png --prompt "Summarize this image." --model pro
 ```
 
 4. Use the output as Gemini's interpretation. If the image is ambiguous, say that Gemini's answer is an interpretation rather than a confirmed fact.
@@ -39,7 +39,7 @@ python scripts/gemini_vision.py --image /path/to/image.png --prompt "Summarize t
 Summarize one image:
 
 ```bash
-python scripts/gemini_vision.py \
+python3 scripts/gemini_vision.py \
   --image /tmp/screenshot.png \
   --prompt "Describe the UI state and call out any visible errors."
 ```
@@ -47,7 +47,7 @@ python scripts/gemini_vision.py \
 Compare two images:
 
 ```bash
-python scripts/gemini_vision.py \
+python3 scripts/gemini_vision.py \
   --image /tmp/reference.png \
   --image /tmp/candidate.png \
   --prompt "Compare these images and list the most important visual differences."
@@ -56,7 +56,7 @@ python scripts/gemini_vision.py \
 Extract structured details:
 
 ```bash
-python scripts/gemini_vision.py \
+python3 scripts/gemini_vision.py \
   --image /tmp/chart.png \
   --prompt "Read the chart. Return the title, axes, trend, and any visible values."
 ```
