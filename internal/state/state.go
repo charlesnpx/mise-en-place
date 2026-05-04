@@ -21,9 +21,10 @@ const ManifestSchema = 1
 
 // State is the in-memory representation of ~/.local/state/mise-en-place/state.json.
 type State struct {
-	ManifestSchema int              `json:"manifest_schema"`
-	MepVersion     string           `json:"mise_en_place_version"`
-	Skills         map[string]Skill `json:"skills"`
+	ManifestSchema int                     `json:"manifest_schema"`
+	MepVersion     string                  `json:"mise_en_place_version"`
+	Skills         map[string]Skill        `json:"skills"`
+	ExternalTools  map[string]ExternalTool `json:"external_tools,omitempty"`
 }
 
 // Skill is one installed skill's record. Kind is "managed" or "delegated".
@@ -51,11 +52,25 @@ type FileRecord struct {
 	SHA256 string `json:"sha256"`
 }
 
+// ExternalTool records a third-party executable verified or installed by
+// mise-en-place. These tools are not file-owned by mise-en-place.
+type ExternalTool struct {
+	Executable  string    `json:"executable"`
+	Path        string    `json:"path"`
+	Manager     string    `json:"manager"`
+	Package     string    `json:"package"`
+	Installed   bool      `json:"installed"`
+	RequiredBy  []string  `json:"required_by,omitempty"`
+	InstalledAt time.Time `json:"installed_at,omitempty"`
+	VerifiedAt  time.Time `json:"verified_at"`
+}
+
 // Empty returns a freshly-initialised State.
 func Empty() *State {
 	return &State{
 		ManifestSchema: ManifestSchema,
 		Skills:         map[string]Skill{},
+		ExternalTools:  map[string]ExternalTool{},
 	}
 }
 
@@ -117,6 +132,9 @@ func Load() (*State, error) {
 	if s.Skills == nil {
 		s.Skills = map[string]Skill{}
 	}
+	if s.ExternalTools == nil {
+		s.ExternalTools = map[string]ExternalTool{}
+	}
 	if s.ManifestSchema == 0 {
 		s.ManifestSchema = ManifestSchema
 	}
@@ -137,6 +155,9 @@ func Save(s *State) error {
 	}
 	if s.Skills == nil {
 		s.Skills = map[string]Skill{}
+	}
+	if s.ExternalTools == nil {
+		s.ExternalTools = map[string]ExternalTool{}
 	}
 	b, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {

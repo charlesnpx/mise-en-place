@@ -34,12 +34,13 @@ If using `go install`, make sure `$(go env GOPATH)/bin` is on your `PATH`.
 ## Quick start
 
 ```sh
-mise-en-place install                             # install available skills; skip optional private delegated skills
+mise-en-place install                             # install available skills and default external tools
 mise-en-place install --all                       # explicit alias for installing everything
 mise-en-place install humanizer                   # install one skill (both targets by default)
+mise-en-place install markitdown                  # verify/install one external tool
 mise-en-place install humanizer --target claude   # install only the Claude payload
 mise-en-place list
-mise-en-place install --all --strict              # fail if any delegated skill cannot be installed
+mise-en-place install --all --strict              # fail if any optional dependency cannot be installed
 mise-en-place upgrade --all
 mise-en-place doctor
 ```
@@ -59,6 +60,11 @@ point at another registry/skills tree while testing local changes.
   `optional: true`. Direct install of a private delegated skill should fail
   clearly if the user lacks access; `install --all` skips optional delegated
   skills by default and `install --all --strict` turns those skips into errors.
+- **External tools** are third-party executables used by skills. They are
+  declared in `registry.yaml`, checked by `doctor`, shown by `list`, and
+  installed during `install --all` when `install_by_default: true`. The first
+  supported manager is `pipx`; there is intentionally no automatic `pip`
+  fallback.
 - **Dual targets:** every managed skill can declare a `claude` payload and a
   `codex` payload. `mise-en-place port <skill> --from <host> --to <host>`
   drafts a translation between the two using the agent CLI; the human
@@ -81,6 +87,40 @@ Delegated repos are cloned into `~/.cache/mise-en-place/repos/<skill>/`,
 planned through their installer contract, collision-checked, and then installed.
 Optional delegated failures are warnings for `install --all` unless `--strict`
 is supplied.
+
+## External tools
+
+External tools are declared beside managed and delegated skills:
+
+```yaml
+external_tools:
+  markitdown:
+    executable: markitdown
+    manager: pipx
+    package: "markitdown[all]"
+    install_by_default: true
+    optional: true
+    required_by:
+      - ado-query
+```
+
+For `install --all` with `--target all` or `--target tools`, mise-en-place
+checks for each default external tool on `PATH`. If it is missing, it runs:
+
+```sh
+pipx install markitdown[all]
+```
+
+If `pipx` is missing, install it with:
+
+```sh
+brew install pipx
+pipx ensurepath
+```
+
+External tools are recorded in state after verification, but mise-en-place does
+not own or hash their files. `uninstall <tool>` forgets the state record and
+leaves the executable installed.
 
 ## Existing files
 

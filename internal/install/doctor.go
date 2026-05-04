@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/charlesnpx/mise-en-place/internal/artifact"
 	"github.com/charlesnpx/mise-en-place/internal/config"
@@ -52,6 +53,27 @@ func Doctor(w io.Writer, reg *config.Registry, opts Options) error {
 		fmt.Fprintf(w, "error: delegated %s: %v\n", name, err)
 	}
 
+	if externalToolsTargetRequested(opts.Target) {
+		tnames := make([]string, 0, len(reg.ExternalTools))
+		for name := range reg.ExternalTools {
+			tnames = append(tnames, name)
+		}
+		sort.Strings(tnames)
+		for _, name := range tnames {
+			err := doctorExternalTool(w, name, reg.ExternalTools[name])
+			if err == nil {
+				continue
+			}
+			if reg.ExternalTools[name].Optional {
+				warnings++
+				fmt.Fprintf(w, "warn: external tool %s: %v\n", name, err)
+				continue
+			}
+			issues++
+			fmt.Fprintf(w, "error: external tool %s: %v\n", name, err)
+		}
+	}
+
 	for name, sk := range s.Skills {
 		if err := doctorInstalled(w, name, sk); err != nil {
 			issues++
@@ -63,6 +85,24 @@ func Doctor(w io.Writer, reg *config.Registry, opts Options) error {
 	if issues > 0 {
 		return fmt.Errorf("doctor found %d issue(s)", issues)
 	}
+	return nil
+}
+
+func doctorExternalTool(w io.Writer, name string, spec config.ExternalToolSpec) error {
+	path, ok := externalToolPath(spec.Executable)
+	if !ok {
+		msg := fmt.Sprintf("missing executable %s", spec.Executable)
+		if spec.Manager == "pipx" {
+			msg += fmt.Sprintf("; install with: pipx install %s", spec.Package)
+		}
+		if len(spec.RequiredBy) > 0 {
+			neededBy := append([]string(nil), spec.RequiredBy...)
+			sort.Strings(neededBy)
+			msg += fmt.Sprintf(" (required by: %s)", strings.Join(neededBy, ", "))
+		}
+		return fmt.Errorf("%s", msg)
+	}
+	fmt.Fprintf(w, "ok: external tool %s found at %s\n", name, path)
 	return nil
 }
 
