@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import re
+import signal
 import shutil
 import subprocess
 import sys
@@ -36,13 +37,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--timeout",
         type=int,
-        default=240,
+        default=90,
         help="Seconds to wait before aborting the Gemini command.",
     )
     parser.add_argument(
         "--retries",
         type=int,
-        default=2,
+        default=0,
         help="Number of additional attempts when Gemini returns an empty or malformed answer.",
     )
     parser.add_argument(
@@ -165,6 +166,28 @@ def is_bad_answer(answer: str) -> bool:
     return False
 
 
+def run_gemini(command: list[str], timeout: int) -> subprocess.CompletedProcess[str]:
+    proc = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        cwd=os.getcwd(),
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        os.killpg(proc.pid, signal.SIGTERM)
+        try:
+            stdout, stderr = proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, signal.SIGKILL)
+            stdout, stderr = proc.communicate()
+        raise subprocess.TimeoutExpired(command, timeout, output=stdout, stderr=stderr) from exc
+    return subprocess.CompletedProcess(command, proc.returncode, stdout, stderr)
+
+
 def main() -> int:
     args = parse_args()
     if shutil.which("gemini") is None:
@@ -186,16 +209,11 @@ def main() -> int:
             command = gemini_command(files, retry_prompt, args.model)
 
         try:
-            result = subprocess.run(
-                command,
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=args.timeout,
-                cwd=os.getcwd(),
-            )
+            result = run_gemini(command, args.timeout)
         except subprocess.TimeoutExpired as exc:
-            last_error = str(exc)
+            last_error = f"gemini timed out after {args.timeout}s"
+            if exc.stderr:
+                last_error += "\n" + str(exc.stderr).strip()
             continue
 
         if result.returncode != 0:

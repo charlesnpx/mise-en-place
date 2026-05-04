@@ -32,6 +32,7 @@ python3 scripts/gemini_vision.py --image /path/to/image.png --prompt "Summarize 
 - If you must call Gemini directly, use `gemini -p "..."`; do not use bare `gemini "..."`, because that starts or continues an interactive session in a TTY.
 - Use `@{/absolute/path/to/image}` injection for image files in Gemini prompts.
 - Keep Gemini in read-only/headless mode with `--approval-mode plan`, `--skip-trust`, and `--output-format json` when calling it directly.
+- The helper aborts Gemini after 90 seconds by default and kills the spawned process group on timeout. Use `--timeout <seconds>` only when a slow visual task genuinely needs more time.
 - Do not use Gemini for ordinary code, text, or repository work just because this skill is available.
 
 ## Examples

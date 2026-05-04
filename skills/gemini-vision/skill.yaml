@@ -1,5 +1,5 @@
 name: gemini-vision
-version: 0.1.1
+version: 0.1.2
 manifest_schema: 1
 min_installer: "0.1.0"
 targets:
