@@ -62,6 +62,9 @@ func One(name string, reg *config.Registry, opts Options) error {
 	if kind == "delegated" {
 		return installDelegated(name, reg.Delegated[name], opts)
 	}
+	if kind == "external_tool" {
+		return installExternalTool(name, reg.ExternalTools[name], opts)
+	}
 	return installManaged(name, opts)
 }
 
@@ -93,6 +96,28 @@ func All(reg *config.Registry, opts Options) error {
 		}
 		fmt.Fprintf(os.Stderr, "skip: %s: %v\n", name, err)
 	}
+
+	if externalToolsTargetRequested(opts.Target) {
+		tnames := make([]string, 0, len(reg.ExternalTools))
+		for name, tool := range reg.ExternalTools {
+			if tool.InstallByDefault {
+				tnames = append(tnames, name)
+			}
+		}
+		sort.Strings(tnames)
+		for _, name := range tnames {
+			tool := reg.ExternalTools[name]
+			err := installExternalTool(name, tool, opts)
+			if err == nil {
+				continue
+			}
+			if opts.Strict || !tool.Optional {
+				errs = append(errs, fmt.Sprintf("%s: %v", name, err))
+				continue
+			}
+			fmt.Fprintf(os.Stderr, "warn: external tool %s: %v\n", name, err)
+		}
+	}
 	if len(errs) > 0 {
 		return fmt.Errorf("install --all completed with errors:\n  %s", strings.Join(errs, "\n  "))
 	}
@@ -101,6 +126,9 @@ func All(reg *config.Registry, opts Options) error {
 
 // Upgrade reinstalls a single skill at the current source version.
 func Upgrade(name string, reg *config.Registry, opts Options) error {
+	if reg.Kind(name) == "external_tool" {
+		return installExternalTool(name, reg.ExternalTools[name], opts)
+	}
 	if err := Uninstall(name); err != nil && !errors.Is(err, errNotInstalled) {
 		return err
 	}
@@ -122,6 +150,14 @@ func UpgradeAll(reg *config.Registry, opts Options) error {
 			errs = append(errs, fmt.Sprintf("%s: %v", name, err))
 		}
 	}
+	for name := range s.ExternalTools {
+		if reg.Kind(name) != "external_tool" {
+			continue
+		}
+		if err := installExternalTool(name, reg.ExternalTools[name], opts); err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", name, err))
+		}
+	}
 	if len(errs) > 0 {
 		return fmt.Errorf("upgrade --all completed with errors:\n  %s", strings.Join(errs, "\n  "))
 	}
@@ -138,6 +174,9 @@ func Uninstall(name string) error {
 	}
 	sk, ok := s.Skills[name]
 	if !ok {
+		if _, toolOK := s.ExternalTools[name]; toolOK {
+			return uninstallExternalTool(name)
+		}
 		return fmt.Errorf("%w: %s", errNotInstalled, name)
 	}
 	if sk.Kind == "delegated" {
@@ -700,5 +739,39 @@ func PrintList(w io.Writer, s *state.State, reg *config.Registry) {
 			attrs = append(attrs, "optional")
 		}
 		fmt.Fprintf(w, "%s%s (%s %s@%s)\n", marker, n, strings.Join(attrs, ", "), d.Repo, d.Ref)
+	}
+
+	fmt.Fprintln(w, "\nExternal tools:")
+	if len(reg.ExternalTools) == 0 {
+		fmt.Fprintln(w, "  (none)")
+		return
+	}
+	tnames := make([]string, 0, len(reg.ExternalTools))
+	for n := range reg.ExternalTools {
+		tnames = append(tnames, n)
+	}
+	sort.Strings(tnames)
+	for _, n := range tnames {
+		tool := reg.ExternalTools[n]
+		marker := "  "
+		status := "missing"
+		path := ""
+		if found, ok := externalToolPath(tool.Executable); ok {
+			marker = "✓ "
+			status = "found"
+			path = " at " + found
+		} else if rec, ok := s.ExternalTools[n]; ok && rec.Path != "" {
+			status = "missing (was " + rec.Path + ")"
+		}
+		attrs := []string{status, tool.Manager, tool.Package}
+		if tool.Optional {
+			attrs = append(attrs, "optional")
+		}
+		if len(tool.RequiredBy) > 0 {
+			requiredBy := append([]string(nil), tool.RequiredBy...)
+			sort.Strings(requiredBy)
+			attrs = append(attrs, "required by: "+strings.Join(requiredBy, ", "))
+		}
+		fmt.Fprintf(w, "%s%s (%s)%s\n", marker, n, strings.Join(attrs, ", "), path)
 	}
 }

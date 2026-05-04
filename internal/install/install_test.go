@@ -1,6 +1,7 @@
 package install
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,6 +36,15 @@ func withNonInteractiveStdin(t *testing.T) {
 		os.Stdin = original
 		_ = r.Close()
 	})
+}
+
+func writeFakeExecutable(t *testing.T, dir, name, body string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 // writeFixtureSkill creates a minimal managed skill on disk and returns the
@@ -387,6 +397,194 @@ func TestInstallAll_SkipsOptionalDelegatedButFailsStrict(t *testing.T) {
 	}
 	if err := All(reg, Options{RunningInstaller: "0.1.0", ManifestSchema: 1, Strict: true}); err == nil {
 		t.Fatal("expected strict install --all to fail on skipped delegated skill")
+	}
+}
+
+func TestInstall_ExternalToolAlreadyPresentIsRecorded(t *testing.T) {
+	home := withFakeHome(t)
+	bin := filepath.Join(home, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	toolPath := writeFakeExecutable(t, bin, "markitdown", "#!/bin/sh\nexit 0\n")
+	t.Setenv("PATH", bin)
+
+	reg := &config.Registry{ExternalTools: map[string]config.ExternalToolSpec{
+		"markitdown": {
+			Executable: "markitdown",
+			Manager:    "pipx",
+			Package:    "markitdown[all]",
+			Optional:   true,
+			RequiredBy: []string{"ado-query"},
+		},
+	}}
+	if err := One("markitdown", reg, Options{Target: "tools"}); err != nil {
+		t.Fatalf("install external tool: %v", err)
+	}
+	s, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec, ok := s.ExternalTools["markitdown"]
+	if !ok {
+		t.Fatalf("markitdown not recorded: %+v", s.ExternalTools)
+	}
+	if rec.Path != toolPath || rec.Installed {
+		t.Fatalf("bad external tool record: %+v", rec)
+	}
+}
+
+func TestInstall_ExternalToolMissingUsesPipx(t *testing.T) {
+	home := withFakeHome(t)
+	bin := filepath.Join(home, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(home, "pipx.log")
+	writeFakeExecutable(t, bin, "pipx", `#!/bin/sh
+echo "$@" > "`+logPath+`"
+/bin/cat > "`+filepath.Join(bin, "markitdown")+`" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+/bin/chmod 755 "`+filepath.Join(bin, "markitdown")+`"
+`)
+	t.Setenv("PATH", bin)
+
+	reg := &config.Registry{ExternalTools: map[string]config.ExternalToolSpec{
+		"markitdown": {
+			Executable: "markitdown",
+			Manager:    "pipx",
+			Package:    "markitdown[all]",
+			Optional:   true,
+		},
+	}}
+	if err := One("markitdown", reg, Options{Target: "tools"}); err != nil {
+		t.Fatalf("install external tool: %v", err)
+	}
+	body, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(string(body)); got != "install markitdown[all]" {
+		t.Fatalf("unexpected pipx call: %q", got)
+	}
+	s, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.ExternalTools["markitdown"].Installed {
+		t.Fatalf("expected installed=true: %+v", s.ExternalTools["markitdown"])
+	}
+}
+
+func TestInstall_ExternalToolTargetCodexSkips(t *testing.T) {
+	home := withFakeHome(t)
+	bin := filepath.Join(home, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+
+	reg := &config.Registry{ExternalTools: map[string]config.ExternalToolSpec{
+		"markitdown": {
+			Executable:       "markitdown",
+			Manager:          "pipx",
+			Package:          "markitdown[all]",
+			InstallByDefault: true,
+			Optional:         true,
+		},
+	}}
+	if err := All(reg, Options{Target: "codex"}); err != nil {
+		t.Fatalf("install all target codex: %v", err)
+	}
+	s, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.ExternalTools) != 0 {
+		t.Fatalf("external tools should not be recorded for codex target: %+v", s.ExternalTools)
+	}
+}
+
+func TestInstallAll_ExternalToolOptionalFailureWarnsButStrictFails(t *testing.T) {
+	home := withFakeHome(t)
+	bin := filepath.Join(home, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+
+	reg := &config.Registry{ExternalTools: map[string]config.ExternalToolSpec{
+		"markitdown": {
+			Executable:       "markitdown",
+			Manager:          "pipx",
+			Package:          "markitdown[all]",
+			InstallByDefault: true,
+			Optional:         true,
+		},
+	}}
+	if err := All(reg, Options{Target: "all"}); err != nil {
+		t.Fatalf("optional missing external tool should warn, not fail: %v", err)
+	}
+	if err := All(reg, Options{Target: "all", Strict: true}); err == nil {
+		t.Fatal("expected strict install --all to fail on missing external tool")
+	}
+}
+
+func TestInstall_ExternalToolDirectMissingPipxFailsClearly(t *testing.T) {
+	home := withFakeHome(t)
+	bin := filepath.Join(home, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+
+	reg := &config.Registry{ExternalTools: map[string]config.ExternalToolSpec{
+		"markitdown": {
+			Executable: "markitdown",
+			Manager:    "pipx",
+			Package:    "markitdown[all]",
+			Optional:   true,
+		},
+	}}
+	err := One("markitdown", reg, Options{Target: "tools"})
+	if err == nil || !strings.Contains(err.Error(), "pipx not found") {
+		t.Fatalf("expected pipx guidance, got %v", err)
+	}
+}
+
+func TestDoctorAndList_ExternalTools(t *testing.T) {
+	home := withFakeHome(t)
+	bin := filepath.Join(home, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFakeExecutable(t, bin, "markitdown", "#!/bin/sh\nexit 0\n")
+	t.Setenv("PATH", bin)
+
+	reg := &config.Registry{ExternalTools: map[string]config.ExternalToolSpec{
+		"markitdown": {
+			Executable: "markitdown",
+			Manager:    "pipx",
+			Package:    "markitdown[all]",
+			Optional:   true,
+			RequiredBy: []string{"ado-query"},
+		},
+	}}
+	var doctorOut bytes.Buffer
+	if err := Doctor(&doctorOut, reg, Options{Target: "tools"}); err != nil {
+		t.Fatalf("doctor: %v\n%s", err, doctorOut.String())
+	}
+	if !strings.Contains(doctorOut.String(), "ok: external tool markitdown found") {
+		t.Fatalf("doctor output missing external tool ok:\n%s", doctorOut.String())
+	}
+
+	s := state.Empty()
+	var listOut bytes.Buffer
+	PrintList(&listOut, s, reg)
+	if !strings.Contains(listOut.String(), "markitdown") || !strings.Contains(listOut.String(), "required by: ado-query") {
+		t.Fatalf("list output missing external tool details:\n%s", listOut.String())
 	}
 }
 

@@ -8,11 +8,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Registry is the parsed shape of registry.yaml. It declares which skills
-// live in this monorepo (managed) and which delegate to external repos.
+// Registry is the parsed shape of registry.yaml. It declares managed skills,
+// delegated repos, and external tools used by those skills.
 type Registry struct {
-	Managed   []string                 `yaml:"managed"`
-	Delegated map[string]DelegatedRepo `yaml:"delegated"`
+	Managed       []string                    `yaml:"managed"`
+	Delegated     map[string]DelegatedRepo    `yaml:"delegated"`
+	ExternalTools map[string]ExternalToolSpec `yaml:"external_tools"`
 }
 
 // DelegatedRepo pins a polyrepo skill to a specific tag.
@@ -21,6 +22,18 @@ type DelegatedRepo struct {
 	Ref        string `yaml:"ref"`
 	Visibility string `yaml:"visibility"` // public | private; defaults to public
 	Optional   bool   `yaml:"optional"`   // optional delegated repos are skipped by install --all unless --strict
+}
+
+// ExternalToolSpec declares a third-party executable used by one or more
+// skills. mise-en-place verifies the executable and may install it through the
+// configured manager.
+type ExternalToolSpec struct {
+	Executable       string   `yaml:"executable"`
+	Manager          string   `yaml:"manager"` // currently only pipx
+	Package          string   `yaml:"package"`
+	InstallByDefault bool     `yaml:"install_by_default"`
+	Optional         bool     `yaml:"optional"`
+	RequiredBy       []string `yaml:"required_by"`
 }
 
 // IsPrivate reports whether the registry explicitly marks the delegated repo
@@ -54,10 +67,21 @@ func LoadRegistry(path string) (*Registry, error) {
 
 // Validate ensures required fields are present.
 func (r *Registry) Validate() error {
-	if len(r.Managed) == 0 && len(r.Delegated) == 0 {
-		return errors.New("registry.yaml: must declare at least one managed or delegated skill")
+	if len(r.Managed) == 0 && len(r.Delegated) == 0 && len(r.ExternalTools) == 0 {
+		return errors.New("registry.yaml: must declare at least one managed skill, delegated skill, or external tool")
+	}
+	seen := map[string]string{}
+	for _, name := range r.Managed {
+		if owner := seen[name]; owner != "" {
+			return fmt.Errorf("registry.yaml: %s declared as both %s and managed", name, owner)
+		}
+		seen[name] = "managed"
 	}
 	for name, d := range r.Delegated {
+		if owner := seen[name]; owner != "" {
+			return fmt.Errorf("registry.yaml: %s declared as both %s and delegated", name, owner)
+		}
+		seen[name] = "delegated"
 		if d.Repo == "" {
 			return fmt.Errorf("registry.yaml: delegated %s missing repo", name)
 		}
@@ -66,6 +90,24 @@ func (r *Registry) Validate() error {
 		}
 		if d.Visibility != "" && d.Visibility != "public" && d.Visibility != "private" {
 			return fmt.Errorf("registry.yaml: delegated %s has invalid visibility %q (expected public or private)", name, d.Visibility)
+		}
+	}
+	for name, t := range r.ExternalTools {
+		if owner := seen[name]; owner != "" {
+			return fmt.Errorf("registry.yaml: %s declared as both %s and external tool", name, owner)
+		}
+		seen[name] = "external tool"
+		if t.Executable == "" {
+			return fmt.Errorf("registry.yaml: external tool %s missing executable", name)
+		}
+		if t.Manager == "" {
+			return fmt.Errorf("registry.yaml: external tool %s missing manager", name)
+		}
+		if t.Manager != "pipx" {
+			return fmt.Errorf("registry.yaml: external tool %s has invalid manager %q (expected pipx)", name, t.Manager)
+		}
+		if t.Package == "" {
+			return fmt.Errorf("registry.yaml: external tool %s missing package", name)
 		}
 	}
 	return nil
@@ -81,7 +123,8 @@ func (r *Registry) AllSkills() []string {
 	return out
 }
 
-// Kind reports whether a skill is managed, delegated, or unknown to the registry.
+// Kind reports whether a registry entry is managed, delegated, external_tool,
+// or unknown.
 func (r *Registry) Kind(name string) string {
 	for _, m := range r.Managed {
 		if m == name {
@@ -90,6 +133,9 @@ func (r *Registry) Kind(name string) string {
 	}
 	if _, ok := r.Delegated[name]; ok {
 		return "delegated"
+	}
+	if _, ok := r.ExternalTools[name]; ok {
+		return "external_tool"
 	}
 	return ""
 }

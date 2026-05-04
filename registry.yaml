@@ -4,6 +4,8 @@
 # delegated: polyrepo skills with their own install-skill.sh. Public users may
 # not have access to private/team-only delegated repos; optional delegated skills
 # are skipped by `mise-en-place install --all` unless --strict is supplied.
+# external_tools: third-party executables used by skills. Default tools are
+# verified or installed during `mise-en-place install --all`.
 
 managed:
   - humanizer
@@ -53,3 +55,13 @@ delegated:
     ref: main
     visibility: public
     optional: false
+
+external_tools:
+  markitdown:
+    executable: markitdown
+    manager: pipx
+    package: "markitdown[all]"
+    install_by_default: true
+    optional: true
+    required_by:
+      - ado-query

@@ -81,6 +81,15 @@ delegated:
     ref: main
     visibility: private
     optional: true
+external_tools:
+  markitdown:
+    executable: markitdown
+    manager: pipx
+    package: "markitdown[all]"
+    install_by_default: true
+    optional: true
+    required_by:
+      - ado-query
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -97,8 +106,14 @@ delegated:
 	if r.Kind("keyframe") != "delegated" {
 		t.Errorf("keyframe kind: %s", r.Kind("keyframe"))
 	}
+	if r.Kind("markitdown") != "external_tool" {
+		t.Errorf("markitdown kind: %s", r.Kind("markitdown"))
+	}
 	if !r.Delegated["browse"].IsPrivate() || !r.Delegated["browse"].IsOptional() {
 		t.Errorf("browse should parse as private optional: %+v", r.Delegated["browse"])
+	}
+	if got := r.ExternalTools["markitdown"].Package; got != "markitdown[all]" {
+		t.Errorf("markitdown package: %q", got)
 	}
 	if r.Kind("nope") != "" {
 		t.Errorf("unknown skill should return empty: %q", r.Kind("nope"))
@@ -119,5 +134,22 @@ delegated:
 	}
 	if _, err := LoadRegistry(path); err == nil {
 		t.Fatal("expected invalid visibility to fail validation")
+	}
+}
+
+func TestLoadRegistry_InvalidExternalToolManager(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "registry.yaml")
+	if err := os.WriteFile(path, []byte(`
+external_tools:
+  markitdown:
+    executable: markitdown
+    manager: pip
+    package: "markitdown[all]"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadRegistry(path); err == nil {
+		t.Fatal("expected invalid external tool manager to fail validation")
 	}
 }
