@@ -122,7 +122,7 @@ convo-porter install --plan --target all --json
 
 Required flags:
 
-- `--target claude|codex|all` — scope the operation. Default should be `all`.
+- `--target claude|codex|tools|all` — scope the operation. Default should be `all`.
 - `--plan` — print the files that would be written, without modifying disk.
 - `--install` — install files. This is the default when no operation flag is
   supplied.
@@ -154,6 +154,14 @@ The JSON shape is intentionally small:
       "files": [
         {
           "path": "/Users/alice/.codex/skills/keyframe/SKILL.md",
+          "sha256": "..."
+        }
+      ]
+    },
+    "tools": {
+      "files": [
+        {
+          "path": "/Users/alice/.local/bin/keyframe",
           "sha256": "..."
         }
       ]
