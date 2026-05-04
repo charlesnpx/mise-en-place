@@ -16,6 +16,11 @@ delegated:
   ado-query:
     repo: github.com/charlesnpx/ado-query
     ref: main
+    visibility: public
+    optional: false
+  npx-ado-query:
+    repo: github.com/charlesnpx/npx-ado-query
+    ref: main
     visibility: private
     optional: true
   browse:
