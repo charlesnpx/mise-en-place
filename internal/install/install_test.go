@@ -431,6 +431,9 @@ esac
 if [ "$op" = "install" ]; then
   mkdir -p "$(dirname "$file")"
   printf '# delegated ` + name + `\n' > "$file"
+  if [ "` + behavior + `" = "executable-file" ]; then
+    chmod 755 "$file"
+  fi
 fi
 if [ "$op" = "uninstall" ]; then
   rm -f "$file"
@@ -605,5 +608,24 @@ func TestInstall_DelegatedUpgradeUpdatesState(t *testing.T) {
 	}
 	if got := s.Skills["delegated"].Version; got != "0.3.0" {
 		t.Fatalf("expected upgraded version, got %s", got)
+	}
+}
+
+func TestInstall_DelegatedPreservesExecutableMode(t *testing.T) {
+	home := withFakeHome(t)
+	repo := writeDelegatedRepo(t, home, "delegated", "executable-file")
+	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"delegated": {Repo: repo, Ref: "main"},
+	}}
+	if err := One("delegated", reg, Options{Target: "codex"}); err != nil {
+		t.Fatalf("install delegated: %v", err)
+	}
+	path := filepath.Join(home, ".codex", "skills", "delegated", "SKILL.md")
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat installed file: %v", err)
+	}
+	if info.Mode().Perm()&0o111 == 0 {
+		t.Fatalf("expected executable mode to be preserved, got %v", info.Mode().Perm())
 	}
 }

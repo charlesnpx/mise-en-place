@@ -604,6 +604,10 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	defer in.Close()
+	srcInfo, err := in.Stat()
+	if err != nil {
+		return err
+	}
 	tmp, err := os.CreateTemp(filepath.Dir(dst), ".install-*")
 	if err != nil {
 		return err
@@ -615,6 +619,9 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpName, srcInfo.Mode().Perm()); err != nil {
 		return err
 	}
 	return os.Rename(tmpName, dst)
