@@ -20,7 +20,7 @@ Delegate visual understanding to Gemini, then report the result faithfully.
 3. Run the helper script from this skill directory:
 
 ```bash
-python scripts/gemini_vision.py --image /path/to/image.png --prompt "Summarize this image." --model pro
+python3 scripts/gemini_vision.py --image /path/to/image.png --prompt "Summarize this image." --model pro
 ```
 
 4. Use the output as Gemini's interpretation. If the image is ambiguous, say that Gemini's answer is an interpretation rather than a confirmed fact.
@@ -32,6 +32,7 @@ python scripts/gemini_vision.py --image /path/to/image.png --prompt "Summarize t
 - If you must call Gemini directly, use `gemini -p "..."`; do not use bare `gemini "..."`, because that starts or continues an interactive session in a TTY.
 - Use `@{/absolute/path/to/image}` injection for image files in Gemini prompts.
 - Keep Gemini in read-only/headless mode with `--approval-mode plan`, `--skip-trust`, and `--output-format json` when calling it directly.
+- The helper aborts Gemini after 90 seconds by default and kills the spawned process group on timeout. Use `--timeout <seconds>` only when a slow visual task genuinely needs more time.
 - Do not use Gemini for ordinary code, text, or repository work just because this skill is available.
 
 ## Examples
@@ -39,7 +40,7 @@ python scripts/gemini_vision.py --image /path/to/image.png --prompt "Summarize t
 Summarize one image:
 
 ```bash
-python scripts/gemini_vision.py \
+python3 scripts/gemini_vision.py \
   --image /tmp/screenshot.png \
   --prompt "Describe the UI state and call out any visible errors."
 ```
@@ -47,7 +48,7 @@ python scripts/gemini_vision.py \
 Compare two images:
 
 ```bash
-python scripts/gemini_vision.py \
+python3 scripts/gemini_vision.py \
   --image /tmp/reference.png \
   --image /tmp/candidate.png \
   --prompt "Compare these images and list the most important visual differences."
@@ -56,7 +57,7 @@ python scripts/gemini_vision.py \
 Extract structured details:
 
 ```bash
-python scripts/gemini_vision.py \
+python3 scripts/gemini_vision.py \
   --image /tmp/chart.png \
   --prompt "Read the chart. Return the title, axes, trend, and any visible values."
 ```
