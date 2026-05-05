@@ -133,11 +133,11 @@ func doctorManaged(w io.Writer, s *state.State, name string, opts Options) error
 }
 
 func doctorDelegated(w io.Writer, s *state.State, name string, repo config.DelegatedRepo, opts Options) error {
-	repoDir, err := prepareDelegatedRepo(name, repo)
+	checkout, err := prepareDelegatedRepo(name, repo)
 	if err != nil {
 		return err
 	}
-	installer, err := delegatedInstaller(repoDir)
+	installer, err := delegatedInstaller(checkout.Dir)
 	if err != nil {
 		return err
 	}
@@ -158,6 +158,10 @@ func doctorDelegated(w io.Writer, s *state.State, name string, repo config.Deleg
 	}
 	if err := checkDestinationConflicts(s, name, plan); err != nil {
 		return err
+	}
+	if checkout.FallbackUsed {
+		fmt.Fprintf(w, "ok: delegated %s installer plan contract (fallback %s)\n", name, checkout.ResolvedRef)
+		return nil
 	}
 	fmt.Fprintf(w, "ok: delegated %s installer plan contract\n", name)
 	return nil

@@ -16,12 +16,15 @@ type Registry struct {
 	ExternalTools map[string]ExternalToolSpec `yaml:"external_tools"`
 }
 
-// DelegatedRepo pins a polyrepo skill to a specific tag.
+// DelegatedRepo locates a polyrepo skill. Use Ref for exact pins, or Channel
+// for moving sources such as latest-release.
 type DelegatedRepo struct {
-	Repo       string `yaml:"repo"`
-	Ref        string `yaml:"ref"`
-	Visibility string `yaml:"visibility"` // public | private; defaults to public
-	Optional   bool   `yaml:"optional"`   // optional delegated repos are skipped by install --all unless --strict
+	Repo        string `yaml:"repo"`
+	Ref         string `yaml:"ref"`
+	Channel     string `yaml:"channel"`      // latest-release
+	FallbackRef string `yaml:"fallback_ref"` // used by latest-release when no release tags exist
+	Visibility  string `yaml:"visibility"`   // public | private; defaults to public
+	Optional    bool   `yaml:"optional"`     // optional delegated repos are skipped by install --all unless --strict
 }
 
 // ExternalToolSpec declares a third-party executable used by one or more
@@ -85,8 +88,14 @@ func (r *Registry) Validate() error {
 		if d.Repo == "" {
 			return fmt.Errorf("registry.yaml: delegated %s missing repo", name)
 		}
-		if d.Ref == "" {
-			return fmt.Errorf("registry.yaml: delegated %s missing ref", name)
+		if d.Ref == "" && d.Channel == "" {
+			return fmt.Errorf("registry.yaml: delegated %s missing ref or channel", name)
+		}
+		if d.Ref != "" && d.Channel != "" {
+			return fmt.Errorf("registry.yaml: delegated %s must not set both ref and channel", name)
+		}
+		if d.Channel != "" && d.Channel != "latest-release" {
+			return fmt.Errorf("registry.yaml: delegated %s has invalid channel %q (expected latest-release)", name, d.Channel)
 		}
 		if d.Visibility != "" && d.Visibility != "public" && d.Visibility != "private" {
 			return fmt.Errorf("registry.yaml: delegated %s has invalid visibility %q (expected public or private)", name, d.Visibility)

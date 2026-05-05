@@ -35,7 +35,11 @@ type Skill struct {
 	Source         string                  `json:"source,omitempty"` // managed: artifact URL or "local:<path>"
 	SHA256         string                  `json:"sha256,omitempty"` // managed: artifact hash
 	Repo           string                  `json:"repo,omitempty"`   // delegated: github.com/...
-	Ref            string                  `json:"ref,omitempty"`    // delegated: configured git ref
+	Ref            string                  `json:"ref,omitempty"`    // delegated: resolved git ref used for install/uninstall
+	Commit         string                  `json:"commit,omitempty"` // delegated: resolved commit used for install
+	ConfiguredRef  string                  `json:"configured_ref,omitempty"`
+	Channel        string                  `json:"channel,omitempty"`
+	FallbackRef    string                  `json:"fallback_ref,omitempty"`
 	Targets        map[string]TargetRecord `json:"targets,omitempty"`
 	Adopted        bool                    `json:"adopted,omitempty"`
 	InstalledAt    time.Time               `json:"installed_at"`

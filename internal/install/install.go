@@ -39,6 +39,7 @@ type Options struct {
 	// Defaults to "skills" relative to the working directory.
 	SkillsRoot string
 	Strict     bool // fail install --all when delegated/optional skills cannot be installed
+	Force      bool // reinstall even when an upgrade source is already current
 }
 
 func (o Options) skillsRoot() string {
@@ -128,6 +129,9 @@ func All(reg *config.Registry, opts Options) error {
 func Upgrade(name string, reg *config.Registry, opts Options) error {
 	if reg.Kind(name) == "external_tool" {
 		return installExternalTool(name, reg.ExternalTools[name], opts)
+	}
+	if reg.Kind(name) == "delegated" {
+		return upgradeDelegated(name, reg.Delegated[name], opts)
 	}
 	if err := Uninstall(name); err != nil && !errors.Is(err, errNotInstalled) {
 		return err
@@ -738,7 +742,14 @@ func PrintList(w io.Writer, s *state.State, reg *config.Registry) {
 		if d.Optional {
 			attrs = append(attrs, "optional")
 		}
-		fmt.Fprintf(w, "%s%s (%s %s@%s)\n", marker, n, strings.Join(attrs, ", "), d.Repo, d.Ref)
+		source := d.Ref
+		if d.Channel != "" {
+			source = d.Channel
+			if d.FallbackRef != "" {
+				source += " fallback " + d.FallbackRef
+			}
+		}
+		fmt.Fprintf(w, "%s%s (%s %s@%s)\n", marker, n, strings.Join(attrs, ", "), d.Repo, source)
 	}
 
 	fmt.Fprintln(w, "\nExternal tools:")
