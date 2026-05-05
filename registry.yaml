@@ -15,9 +15,14 @@ managed:
   - review-pr
 
 delegated:
+  agent-context:
+    repo: github.com/charlesnpx/agent-context
+    ref: v0.4.1
+    visibility: public
+    optional: false
   ado-query:
     repo: github.com/charlesnpx/ado-query
-    ref: main
+    ref: v0.4.0
     visibility: public
     optional: false
   npx-ado-query:
@@ -37,12 +42,12 @@ delegated:
     optional: false
   figma-fetch:
     repo: github.com/charlesnpx/figma-fetch
-    ref: main
+    ref: v0.4.0
     visibility: public
     optional: false
   miro-fetch:
     repo: github.com/charlesnpx/miro-fetch
-    ref: main
+    ref: v0.4.0
     visibility: public
     optional: false
   convo-relay:
