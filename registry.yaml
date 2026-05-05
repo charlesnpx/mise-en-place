@@ -22,12 +22,12 @@ delegated:
     optional: false
   ado-query:
     repo: github.com/charlesnpx/ado-query
-    ref: v0.4.2
+    ref: v0.4.3
     visibility: public
     optional: false
   npx-ado-query:
     repo: github.com/charlesnpx/npx-ado-query
-    ref: main
+    ref: v0.2.0
     visibility: private
     optional: true
   browse:
