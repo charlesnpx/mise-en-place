@@ -17,12 +17,12 @@ managed:
 delegated:
   agent-context:
     repo: github.com/charlesnpx/agent-context
-    ref: v0.4.1
+    ref: v0.4.2
     visibility: public
     optional: false
   ado-query:
     repo: github.com/charlesnpx/ado-query
-    ref: v0.4.1
+    ref: v0.4.2
     visibility: public
     optional: false
   npx-ado-query:
@@ -42,12 +42,12 @@ delegated:
     optional: false
   figma-fetch:
     repo: github.com/charlesnpx/figma-fetch
-    ref: v0.4.1
+    ref: v0.4.2
     visibility: public
     optional: false
   miro-fetch:
     repo: github.com/charlesnpx/miro-fetch
-    ref: v0.4.1
+    ref: v0.4.2
     visibility: public
     optional: false
   convo-relay:
