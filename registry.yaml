@@ -17,47 +17,51 @@ managed:
 delegated:
   agent-context:
     repo: github.com/charlesnpx/agent-context
-    ref: v0.4.2
+    channel: latest-release
     visibility: public
     optional: false
   ado-query:
     repo: github.com/charlesnpx/ado-query
-    ref: v0.4.4
+    channel: latest-release
     visibility: public
     optional: false
   npx-ado-query:
     repo: github.com/charlesnpx/npx-ado-query
-    ref: v0.2.1
+    channel: latest-release
     visibility: private
     optional: true
   browse:
     repo: github.com/charlesnpx/browse
-    ref: main
+    channel: latest-release
+    fallback_ref: main
     visibility: private
     optional: true
   keyframe:
     repo: github.com/charlesnpx/keyframe
-    ref: main
+    channel: latest-release
+    fallback_ref: main
     visibility: public
     optional: false
   figma-fetch:
     repo: github.com/charlesnpx/figma-fetch
-    ref: v0.4.2
+    channel: latest-release
     visibility: public
     optional: false
   miro-fetch:
     repo: github.com/charlesnpx/miro-fetch
-    ref: v0.4.2
+    channel: latest-release
     visibility: public
     optional: false
   convo-relay:
     repo: github.com/charlesnpx/convo-relay
-    ref: main
+    channel: latest-release
+    fallback_ref: main
     visibility: private
     optional: true
   convo-porter:
     repo: github.com/charlesnpx/convo-porter
-    ref: main
+    channel: latest-release
+    fallback_ref: main
     visibility: public
     optional: false
 

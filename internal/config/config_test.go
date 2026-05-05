@@ -73,7 +73,8 @@ managed:
 delegated:
   keyframe:
     repo: github.com/charlesnpx/keyframe
-    ref: v1.2.0
+    channel: latest-release
+    fallback_ref: main
     visibility: public
     optional: false
   browse:
@@ -106,6 +107,9 @@ external_tools:
 	if r.Kind("keyframe") != "delegated" {
 		t.Errorf("keyframe kind: %s", r.Kind("keyframe"))
 	}
+	if got := r.Delegated["keyframe"].Channel; got != "latest-release" {
+		t.Errorf("keyframe channel: %q", got)
+	}
 	if r.Kind("markitdown") != "external_tool" {
 		t.Errorf("markitdown kind: %s", r.Kind("markitdown"))
 	}
@@ -117,6 +121,41 @@ external_tools:
 	}
 	if r.Kind("nope") != "" {
 		t.Errorf("unknown skill should return empty: %q", r.Kind("nope"))
+	}
+}
+
+func TestLoadRegistry_InvalidDelegatedSource(t *testing.T) {
+	dir := t.TempDir()
+	cases := map[string]string{
+		"missing source": `
+delegated:
+  tool:
+    repo: github.com/charlesnpx/tool
+`,
+		"ref and channel": `
+delegated:
+  tool:
+    repo: github.com/charlesnpx/tool
+    ref: v1.0.0
+    channel: latest-release
+`,
+		"bad channel": `
+delegated:
+  tool:
+    repo: github.com/charlesnpx/tool
+    channel: nightly
+`,
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(dir, name+".yaml")
+			if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := LoadRegistry(path); err == nil {
+				t.Fatal("expected delegated source validation error")
+			}
+		})
 	}
 }
 

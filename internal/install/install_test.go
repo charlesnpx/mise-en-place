@@ -693,6 +693,72 @@ func TestInstall_DelegatedRunsPlanBeforeInstall(t *testing.T) {
 	}
 }
 
+func TestInstall_DelegatedLatestReleaseRecordsResolvedRef(t *testing.T) {
+	home := withFakeHome(t)
+	repo := writeDelegatedRepo(t, home, "delegated", "ok")
+	run(t, repo, "git", "tag", "v0.2.0")
+	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"delegated": {Repo: repo, Channel: "latest-release", FallbackRef: "main"},
+	}}
+	if err := One("delegated", reg, Options{Target: "codex"}); err != nil {
+		t.Fatalf("install delegated: %v", err)
+	}
+	s, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sk := s.Skills["delegated"]
+	if sk.Ref != "v0.2.0" || sk.Commit == "" || sk.Channel != "latest-release" || sk.FallbackRef != "main" || sk.ConfiguredRef != "" {
+		t.Fatalf("bad delegated channel state: %+v", sk)
+	}
+}
+
+func TestInstall_DelegatedLatestReleaseUsesFallbackWithoutTags(t *testing.T) {
+	home := withFakeHome(t)
+	repo := writeDelegatedRepo(t, home, "delegated", "ok")
+	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"delegated": {Repo: repo, Channel: "latest-release", FallbackRef: "main"},
+	}}
+	if err := One("delegated", reg, Options{Target: "codex"}); err != nil {
+		t.Fatalf("install delegated: %v", err)
+	}
+	s, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sk := s.Skills["delegated"]
+	if sk.Ref != "main" || sk.Commit == "" || sk.Channel != "latest-release" || sk.FallbackRef != "main" {
+		t.Fatalf("bad fallback delegated state: %+v", sk)
+	}
+}
+
+func TestInstall_DelegatedLatestReleaseRequiresTagOrFallback(t *testing.T) {
+	home := withFakeHome(t)
+	repo := writeDelegatedRepo(t, home, "delegated", "ok")
+	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"delegated": {Repo: repo, Channel: "latest-release"},
+	}}
+	err := One("delegated", reg, Options{Target: "codex"})
+	if err == nil || !strings.Contains(err.Error(), "no stable release tags") {
+		t.Fatalf("expected missing tag/fallback error, got %v", err)
+	}
+}
+
+func TestInstall_LatestStableReleaseTagSortsSemver(t *testing.T) {
+	home := withFakeHome(t)
+	repo := writeDelegatedRepo(t, home, "delegated", "ok")
+	for _, tag := range []string{"v0.9.0", "v0.10.0", "v0.10.0-beta.1", "not-a-version", "v0.2.5"} {
+		run(t, repo, "git", "tag", tag)
+	}
+	got, err := latestStableReleaseTag(repo)
+	if err != nil {
+		t.Fatalf("latestStableReleaseTag: %v", err)
+	}
+	if got != "v0.10.0" {
+		t.Fatalf("latest tag = %q, want v0.10.0", got)
+	}
+}
+
 func TestInstall_DelegatedBadJSONAndNameMismatchFail(t *testing.T) {
 	home := withFakeHome(t)
 	badJSON := writeDelegatedRepo(t, home, "badjson", "bad-json")
@@ -806,6 +872,65 @@ func TestInstall_DelegatedUpgradeUpdatesState(t *testing.T) {
 	}
 	if got := s.Skills["delegated"].Version; got != "0.3.0" {
 		t.Fatalf("expected upgraded version, got %s", got)
+	}
+}
+
+func TestInstall_DelegatedUpgradeSkipsWhenCurrent(t *testing.T) {
+	home := withFakeHome(t)
+	repo := writeDelegatedRepo(t, home, "delegated", "ok")
+	run(t, repo, "git", "tag", "v0.2.0")
+	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"delegated": {Repo: repo, Channel: "latest-release"},
+	}}
+	if err := One("delegated", reg, Options{Target: "codex"}); err != nil {
+		t.Fatalf("install delegated: %v", err)
+	}
+	if err := Upgrade("delegated", reg, Options{Target: "codex"}); err != nil {
+		t.Fatalf("upgrade delegated: %v", err)
+	}
+	s, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Skills["delegated"].Version; got != "0.2.0" {
+		t.Fatalf("expected current version to remain, got %s", got)
+	}
+}
+
+func TestInstall_DelegatedUpgradeLatestReleaseUpdatesState(t *testing.T) {
+	home := withFakeHome(t)
+	repo := writeDelegatedRepo(t, home, "delegated", "ok")
+	run(t, repo, "git", "tag", "v0.2.0")
+	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"delegated": {Repo: repo, Channel: "latest-release"},
+	}}
+	if err := One("delegated", reg, Options{Target: "codex"}); err != nil {
+		t.Fatalf("install delegated: %v", err)
+	}
+
+	scriptPath := filepath.Join(repo, "install-skill.sh")
+	body, err := os.ReadFile(scriptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body = []byte(strings.ReplaceAll(string(body), `"version":"0.2.0"`, `"version":"0.3.0"`))
+	if err := os.WriteFile(scriptPath, body, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run(t, repo, "git", "add", ".")
+	run(t, repo, "git", "commit", "-m", "upgrade")
+	run(t, repo, "git", "tag", "v0.3.0")
+
+	if err := Upgrade("delegated", reg, Options{Target: "codex"}); err != nil {
+		t.Fatalf("upgrade delegated: %v", err)
+	}
+	s, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sk := s.Skills["delegated"]
+	if sk.Version != "0.3.0" || sk.Ref != "v0.3.0" || sk.Commit == "" || sk.Channel != "latest-release" {
+		t.Fatalf("expected upgraded latest state, got %+v", sk)
 	}
 }
 

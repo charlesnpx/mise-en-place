@@ -8,7 +8,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,19 +37,32 @@ type delegatedFileResult struct {
 	SHA256 string `json:"sha256,omitempty"`
 }
 
+type delegatedCheckout struct {
+	Dir           string
+	ResolvedRef   string
+	Commit        string
+	ConfiguredRef string
+	Channel       string
+	FallbackRef   string
+	FallbackUsed  bool
+}
+
 func installDelegated(name string, repo config.DelegatedRepo, opts Options) error {
 	target := opts.Target
 	if target == "" {
 		target = "all"
 	}
-	repoDir, err := prepareDelegatedRepo(name, repo)
+	checkout, err := prepareDelegatedRepo(name, repo)
 	if err != nil {
 		if repo.IsPrivate() {
 			return fmt.Errorf("%w; %s is marked private/team-only, check repository access or authentication", err, name)
 		}
 		return err
 	}
-	installer, err := delegatedInstaller(repoDir)
+	if checkout.FallbackUsed {
+		fmt.Fprintf(os.Stderr, "warn: %s: no stable release tags found; using fallback ref %s\n", name, checkout.ResolvedRef)
+	}
+	installer, err := delegatedInstaller(checkout.Dir)
 	if err != nil {
 		return err
 	}
@@ -96,12 +111,16 @@ func installDelegated(name string, repo config.DelegatedRepo, opts Options) erro
 	}
 
 	s.Skills[name] = state.Skill{
-		Kind:        "delegated",
-		Version:     staged.Version,
-		Repo:        repo.Repo,
-		Ref:         repo.Ref,
-		Targets:     files,
-		InstalledAt: time.Now().UTC(),
+		Kind:          "delegated",
+		Version:       staged.Version,
+		Repo:          repo.Repo,
+		Ref:           checkout.ResolvedRef,
+		Commit:        checkout.Commit,
+		ConfiguredRef: checkout.ConfiguredRef,
+		Channel:       checkout.Channel,
+		FallbackRef:   checkout.FallbackRef,
+		Targets:       files,
+		InstalledAt:   time.Now().UTC(),
 	}
 	if err := state.Save(s); err != nil {
 		return err
@@ -122,12 +141,57 @@ func installDelegated(name string, repo config.DelegatedRepo, opts Options) erro
 	return nil
 }
 
+func upgradeDelegated(name string, repo config.DelegatedRepo, opts Options) error {
+	target := opts.Target
+	if target == "" {
+		target = "all"
+	}
+	checkout, err := prepareDelegatedRepo(name, repo)
+	if err != nil {
+		if repo.IsPrivate() {
+			return fmt.Errorf("%w; %s is marked private/team-only, check repository access or authentication", err, name)
+		}
+		return err
+	}
+	if checkout.FallbackUsed {
+		fmt.Fprintf(os.Stderr, "warn: %s: no stable release tags found; using fallback ref %s\n", name, checkout.ResolvedRef)
+	}
+	installer, err := delegatedInstaller(checkout.Dir)
+	if err != nil {
+		return err
+	}
+	planned, err := runDelegatedInstaller(installer, name, "plan", target, false, "")
+	if err != nil {
+		return err
+	}
+	s, err := state.Load()
+	if err != nil {
+		return err
+	}
+	if current, ok := s.Skills[name]; ok && current.Kind == "delegated" && !opts.Force {
+		if current.Repo == repo.Repo &&
+			current.Ref == checkout.ResolvedRef &&
+			current.Commit == checkout.Commit &&
+			current.Version == planned.Version &&
+			current.ConfiguredRef == checkout.ConfiguredRef &&
+			current.Channel == checkout.Channel &&
+			current.FallbackRef == checkout.FallbackRef {
+			fmt.Printf("%s already up to date (%s @ %s)\n", name, current.Version, current.Ref)
+			return nil
+		}
+	}
+	if err := Uninstall(name); err != nil && !errors.Is(err, errNotInstalled) {
+		return err
+	}
+	return installDelegated(name, repo, opts)
+}
+
 func uninstallDelegated(name string, sk state.Skill) error {
 	if sk.Repo != "" && sk.Ref != "" {
 		repo := config.DelegatedRepo{Repo: sk.Repo, Ref: sk.Ref}
-		repoDir, err := prepareDelegatedRepo(name, repo)
+		checkout, err := prepareDelegatedRepo(name, repo)
 		if err == nil {
-			if installer, err := delegatedInstaller(repoDir); err == nil {
+			if installer, err := delegatedInstaller(checkout.Dir); err == nil {
 				if _, err := runDelegatedInstaller(installer, name, "uninstall", "all", false, ""); err == nil {
 					return removeDelegatedState(name)
 				} else {
@@ -160,38 +224,124 @@ func removeDelegatedState(name string) error {
 	return nil
 }
 
-func prepareDelegatedRepo(name string, repo config.DelegatedRepo) (string, error) {
+func prepareDelegatedRepo(name string, repo config.DelegatedRepo) (delegatedCheckout, error) {
 	cacheRoot, err := delegatedCacheRoot()
 	if err != nil {
-		return "", err
+		return delegatedCheckout{}, err
 	}
 	repoDir := filepath.Join(cacheRoot, name)
 	if _, err := os.Stat(filepath.Join(repoDir, ".git")); errors.Is(err, os.ErrNotExist) {
 		if err := os.RemoveAll(repoDir); err != nil {
-			return "", err
+			return delegatedCheckout{}, err
 		}
 		if err := os.MkdirAll(filepath.Dir(repoDir), 0o755); err != nil {
-			return "", err
+			return delegatedCheckout{}, err
 		}
 		if err := runGit("", "clone", delegatedRepoURL(repo.Repo), repoDir); err != nil {
-			return "", err
+			return delegatedCheckout{}, err
 		}
 	} else if err != nil {
-		return "", err
+		return delegatedCheckout{}, err
 	} else {
 		if err := runGit(repoDir, "fetch", "--all", "--tags", "--prune"); err != nil {
-			return "", err
+			return delegatedCheckout{}, err
 		}
 	}
-	if err := runGit(repoDir, "checkout", repo.Ref); err != nil {
-		return "", err
+	checkout, err := resolveDelegatedCheckout(repoDir, repo)
+	if err != nil {
+		return delegatedCheckout{}, err
 	}
-	if _, err := gitOutput(repoDir, "rev-parse", "--verify", "origin/"+repo.Ref); err == nil {
-		if err := runGit(repoDir, "reset", "--hard", "origin/"+repo.Ref); err != nil {
-			return "", err
+	checkout.Dir = repoDir
+	if err := runGit(repoDir, "checkout", checkout.ResolvedRef); err != nil {
+		return delegatedCheckout{}, err
+	}
+	if _, err := gitOutput(repoDir, "rev-parse", "--verify", "origin/"+checkout.ResolvedRef); err == nil {
+		if err := runGit(repoDir, "reset", "--hard", "origin/"+checkout.ResolvedRef); err != nil {
+			return delegatedCheckout{}, err
 		}
 	}
-	return repoDir, nil
+	commit, err := gitOutput(repoDir, "rev-parse", "HEAD")
+	if err != nil {
+		return delegatedCheckout{}, fmt.Errorf("git rev-parse HEAD: %w\n%s", err, strings.TrimSpace(string(commit)))
+	}
+	checkout.Commit = strings.TrimSpace(string(commit))
+	return checkout, nil
+}
+
+func resolveDelegatedCheckout(repoDir string, repo config.DelegatedRepo) (delegatedCheckout, error) {
+	if repo.Ref != "" {
+		return delegatedCheckout{
+			ResolvedRef:   repo.Ref,
+			ConfiguredRef: repo.Ref,
+		}, nil
+	}
+	if repo.Channel != "latest-release" {
+		return delegatedCheckout{}, fmt.Errorf("unsupported delegated channel %q", repo.Channel)
+	}
+	tag, err := latestStableReleaseTag(repoDir)
+	if err != nil {
+		return delegatedCheckout{}, err
+	}
+	if tag != "" {
+		return delegatedCheckout{
+			ResolvedRef:  tag,
+			Channel:      repo.Channel,
+			FallbackRef:  repo.FallbackRef,
+			FallbackUsed: false,
+		}, nil
+	}
+	if repo.FallbackRef != "" {
+		return delegatedCheckout{
+			ResolvedRef:  repo.FallbackRef,
+			Channel:      repo.Channel,
+			FallbackRef:  repo.FallbackRef,
+			FallbackUsed: true,
+		}, nil
+	}
+	return delegatedCheckout{}, fmt.Errorf("no stable release tags found for %s and no fallback_ref configured", repo.Repo)
+}
+
+var stableReleaseTagRE = regexp.MustCompile(`^v([0-9]+)\.([0-9]+)\.([0-9]+)$`)
+
+type releaseTag struct {
+	Name       string
+	Major, Min int
+	Patch      int
+}
+
+func latestStableReleaseTag(repoDir string) (string, error) {
+	out, err := gitOutput(repoDir, "tag", "--list", "v*")
+	if err != nil {
+		return "", fmt.Errorf("git tag --list v*: %w\n%s", err, strings.TrimSpace(string(out)))
+	}
+	var tags []releaseTag
+	for _, line := range strings.Split(string(out), "\n") {
+		name := strings.TrimSpace(line)
+		if name == "" {
+			continue
+		}
+		match := stableReleaseTagRE.FindStringSubmatch(name)
+		if match == nil {
+			continue
+		}
+		major, _ := strconv.Atoi(match[1])
+		minor, _ := strconv.Atoi(match[2])
+		patch, _ := strconv.Atoi(match[3])
+		tags = append(tags, releaseTag{Name: name, Major: major, Min: minor, Patch: patch})
+	}
+	if len(tags) == 0 {
+		return "", nil
+	}
+	sort.Slice(tags, func(i, j int) bool {
+		if tags[i].Major != tags[j].Major {
+			return tags[i].Major > tags[j].Major
+		}
+		if tags[i].Min != tags[j].Min {
+			return tags[i].Min > tags[j].Min
+		}
+		return tags[i].Patch > tags[j].Patch
+	})
+	return tags[0].Name, nil
 }
 
 func delegatedCacheRoot() (string, error) {

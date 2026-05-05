@@ -136,7 +136,10 @@ func newUninstallCmd() *cobra.Command {
 }
 
 func newUpgradeCmd() *cobra.Command {
-	var all bool
+	var (
+		all   bool
+		force bool
+	)
 	cmd := &cobra.Command{
 		Use:   "upgrade [skill]",
 		Short: "Upgrade an installed skill (or --all)",
@@ -150,6 +153,7 @@ func newUpgradeCmd() *cobra.Command {
 				RunningInstaller: Version,
 				ManifestSchema:   ManifestSchema,
 				SkillsRoot:       source.SkillsRoot,
+				Force:            force,
 			}
 			if all {
 				return install.UpgradeAll(source.Registry, opts)
@@ -161,6 +165,7 @@ func newUpgradeCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&all, "all", false, "upgrade every installed skill")
+	cmd.Flags().BoolVar(&force, "force", false, "reinstall even when the current resolved version is already installed")
 	return cmd
 }
 

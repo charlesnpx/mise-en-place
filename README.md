@@ -56,10 +56,13 @@ point at another registry/skills tree while testing local changes.
   `skill.yaml` manifest and per-target payloads. They are released via
   per-skill semver git tags (`<skill>/<version>`).
 - **Delegated skills** live in their own repos (e.g. `keyframe`, `browse`) and
-  are pinned in `registry.yaml`. They may be marked `visibility: private` and
-  `optional: true`. Direct install of a private delegated skill should fail
-  clearly if the user lacks access; `install --all` skips optional delegated
-  skills by default and `install --all --strict` turns those skips into errors.
+  are declared in `registry.yaml` with either an exact `ref` pin or
+  `channel: latest-release`. The latest-release channel resolves the highest
+  stable `vMAJOR.MINOR.PATCH` git tag at install/upgrade time. Delegated entries
+  may be marked `visibility: private` and `optional: true`. Direct install of a
+  private delegated skill should fail clearly if the user lacks access;
+  `install --all` skips optional delegated skills by default and
+  `install --all --strict` turns those skips into errors.
 - **External tools** are third-party executables used by skills. They are
   declared in `registry.yaml`, checked by `doctor`, shown by `list`, and
   installed during `install --all` when `install_by_default: true`. The first
@@ -87,6 +90,29 @@ Delegated repos are cloned into `~/.cache/mise-en-place/repos/<skill>/`,
 planned through their installer contract, collision-checked, and then installed.
 Optional delegated failures are warnings for `install --all` unless `--strict`
 is supplied.
+
+Delegated source examples:
+
+```yaml
+delegated:
+  ado-query:
+    repo: github.com/charlesnpx/ado-query
+    channel: latest-release
+  agent-context:
+    repo: github.com/charlesnpx/agent-context
+    ref: v0.4.2
+  browse:
+    repo: github.com/charlesnpx/browse
+    channel: latest-release
+    fallback_ref: main
+    visibility: private
+    optional: true
+```
+
+Use exact `ref` pins when reproducibility matters. Use
+`channel: latest-release` for delegated tools that should advance when their
+own repo publishes a newer stable release. `fallback_ref` keeps untagged repos
+usable until they start publishing release tags.
 
 ## External tools
 
@@ -229,6 +255,11 @@ Rules:
 `--install --json --install-root <tempdir>` to stage the real planned content.
 It maps staged paths back to the user's home directory and applies the same
 ownership, diff, backup, and state flow used for managed skills.
+
+For delegated upgrades, `mise-en-place` resolves the current source first and
+skips the reinstall when the installed version, resolved ref, and resolved
+commit are already current. Use `mise-en-place upgrade <skill> --force` to
+reinstall the current resolved version.
 
 ## Releases
 
