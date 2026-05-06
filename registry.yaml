@@ -15,11 +15,6 @@ managed:
   - review-pr
 
 delegated:
-  agent-context:
-    repo: github.com/charlesnpx/agent-context
-    channel: latest-release
-    visibility: public
-    optional: false
   ado-query:
     repo: github.com/charlesnpx/ado-query
     channel: latest-release
