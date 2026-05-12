@@ -1,7 +1,9 @@
 name: azure-static-site
-version: 0.1.0
+version: 0.1.1
 manifest_schema: 1
 min_installer: "0.1.0"
+capabilities:
+  - deploy
 targets:
   claude:
     type: skill_dir
@@ -11,3 +13,29 @@ targets:
     type: skill_dir
     payload: codex
     install_to: ~/.codex/skills/azure-static-site
+setup:
+  - kind: executable
+    executable: az
+    required_for:
+      - deploy
+    remediation: Install Azure CLI, then run `az login`.
+  - kind: azure-cli-auth
+    required_for:
+      - deploy
+    remediation: Run `az login`, then verify with `az account show`.
+  - kind: executable
+    executable: swa
+    required_for:
+      - deploy
+    remediation: Install with `npm i -g @azure/static-web-apps-cli`.
+  - kind: env
+    env: AZURE_STATIC_SITE_RESOURCE_GROUP
+    value_class: plain
+    required_for:
+      - deploy
+    remediation: Export `AZURE_STATIC_SITE_RESOURCE_GROUP` to the approved existing resource group.
+  - kind: azure-resource-group
+    env: AZURE_STATIC_SITE_RESOURCE_GROUP
+    required_for:
+      - deploy
+    remediation: Ask an Azure admin for access to the approved resource group named by `AZURE_STATIC_SITE_RESOURCE_GROUP`.

@@ -1,7 +1,9 @@
 name: gemini-vision
-version: 0.1.2
+version: 0.1.3
 manifest_schema: 1
 min_installer: "0.1.0"
+capabilities:
+  - read
 targets:
   claude:
     type: skill_dir
@@ -11,3 +13,9 @@ targets:
     type: skill_dir
     payload: codex
     install_to: ~/.codex/skills/gemini-vision
+setup:
+  - kind: executable
+    executable: gemini
+    required_for:
+      - read
+    remediation: Install and authenticate Gemini CLI before using gemini-vision.

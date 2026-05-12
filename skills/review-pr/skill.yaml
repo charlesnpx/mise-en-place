@@ -1,7 +1,9 @@
 name: review-pr
-version: 0.1.0
+version: 0.1.1
 manifest_schema: 1
 min_installer: "0.1.0"
+capabilities:
+  - query
 targets:
   claude:
     type: skill_dir
@@ -11,3 +13,13 @@ targets:
     type: skill_dir
     payload: codex
     install_to: ~/.codex/skills/review-pr
+setup:
+  - kind: executable
+    executable: gh
+    required_for:
+      - query
+    remediation: Install GitHub CLI, then run `gh auth login`.
+  - kind: github-cli-auth
+    required_for:
+      - query
+    remediation: Run `gh auth login`, then verify with `gh auth status`.

@@ -25,7 +25,12 @@ const ManifestSchema = 1
 func main() {
 	if err := newRootCmd().Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
+		code := 1
+		var exitCoder interface{ ExitCode() int }
+		if errors.As(err, &exitCoder) {
+			code = exitCoder.ExitCode()
+		}
+		os.Exit(code)
 	}
 }
 
@@ -45,6 +50,8 @@ func newRootCmd() *cobra.Command {
 		newUpgradeCmd(),
 		newPortCmd(),
 		newPortAlignCmd(),
+		newSetupCmd(),
+		newHealthCmd(),
 		newDoctorCmd(),
 		newScanCmd(),
 		newAdoptCmd(),
@@ -195,6 +202,89 @@ func newPortAlignCmd() *cobra.Command {
 			return errStub("port-align")
 		},
 	}
+}
+
+func newSetupCmd() *cobra.Command {
+	var (
+		target      string
+		capability  string
+		check       bool
+		jsonOutput  bool
+		interactive bool
+	)
+	cmd := &cobra.Command{
+		Use:   "setup [skill]",
+		Short: "Check setup requirements and print remediation",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			source, err := loadRegistry()
+			if err != nil {
+				return err
+			}
+			skill := ""
+			if len(args) == 1 {
+				skill = args[0]
+			}
+			return install.RunSetup(os.Stdout, source.Registry, install.Options{
+				Target:           target,
+				RunningInstaller: Version,
+				ManifestSchema:   ManifestSchema,
+				SkillsRoot:       source.SkillsRoot,
+			}, install.SetupOptions{
+				Skill:       skill,
+				Capability:  config.SetupCapability(capability),
+				Check:       check,
+				JSON:        jsonOutput,
+				Interactive: interactive,
+			})
+		},
+	}
+	cmd.Flags().StringVar(&target, "target", "all", "claude | codex | tools | all")
+	cmd.Flags().StringVar(&capability, "capability", "", "read | query | write | deploy")
+	cmd.Flags().BoolVar(&check, "check", false, "print terse status and use setup exit codes")
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "print machine-readable setup status")
+	cmd.Flags().BoolVar(&interactive, "interactive", false, "allow interactive setup prompts and approved non-secret config writes")
+	return cmd
+}
+
+func newHealthCmd() *cobra.Command {
+	var (
+		target     string
+		capability string
+		check      bool
+		jsonOutput bool
+	)
+	cmd := &cobra.Command{
+		Use:   "health [skill]",
+		Short: "Check installed skill setup health",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			source, err := loadRegistry()
+			if err != nil {
+				return err
+			}
+			skill := ""
+			if len(args) == 1 {
+				skill = args[0]
+			}
+			return install.RunHealth(os.Stdout, source.Registry, install.Options{
+				Target:           target,
+				RunningInstaller: Version,
+				ManifestSchema:   ManifestSchema,
+				SkillsRoot:       source.SkillsRoot,
+			}, install.SetupOptions{
+				Skill:      skill,
+				Capability: config.SetupCapability(capability),
+				Check:      check,
+				JSON:       jsonOutput,
+			})
+		},
+	}
+	cmd.Flags().StringVar(&target, "target", "all", "claude | codex | tools | all")
+	cmd.Flags().StringVar(&capability, "capability", "", "read | query | write | deploy")
+	cmd.Flags().BoolVar(&check, "check", false, "print terse status and use setup exit codes")
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "print machine-readable setup status")
+	return cmd
 }
 
 func newDoctorCmd() *cobra.Command {

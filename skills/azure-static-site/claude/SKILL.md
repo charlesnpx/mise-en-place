@@ -134,6 +134,12 @@ Important details:
 
 ## Prerequisites
 
+When available, check this skill's declared setup contract first:
+
+```bash
+mise-en-place setup azure-static-site --capability deploy
+```
+
 Required local tools:
 
 ```bash
