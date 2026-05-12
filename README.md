@@ -42,6 +42,8 @@ mise-en-place install humanizer --target claude   # install only the Claude payl
 mise-en-place list
 mise-en-place install --all --strict              # fail if any optional dependency cannot be installed
 mise-en-place upgrade --all
+mise-en-place setup azure-static-site --capability deploy
+mise-en-place health
 mise-en-place doctor
 ```
 
@@ -68,6 +70,11 @@ point at another registry/skills tree while testing local changes.
   installed during `install --all` when `install_by_default: true`. The first
   supported manager is `pipx`; there is intentionally no automatic `pip`
   fallback.
+- **Setup requirements** are declarative prerequisites exposed by managed
+  manifests and delegated installer JSON. `mise-en-place setup` evaluates them
+  and prints remediation without mutating shell profiles or secrets. `health`
+  checks installed skills only, and `doctor` warns when installed skills are not
+  set up.
 - **Dual targets:** every managed skill can declare a `claude` payload and a
   `codex` payload. `mise-en-place port <skill> --from <host> --to <host>`
   drafts a translation between the two using the agent CLI; the human
@@ -148,6 +155,39 @@ External tools are recorded in state after verification, but mise-en-place does
 not own or hash their files. `uninstall <tool>` forgets the state record and
 leaves the executable installed.
 
+## Setup and health
+
+Skills may declare setup requirements for one or more capabilities:
+
+- `read`
+- `query`
+- `write`
+- `deploy`
+
+Use setup before a skill that needs account-specific configuration:
+
+```sh
+mise-en-place setup figma-fetch --capability read
+mise-en-place setup ado-query --capability query
+mise-en-place setup azure-static-site --capability deploy
+```
+
+Default setup mode evaluates only: no prompts, no writes, and no shell profile
+edits. `--json` returns machine-readable status. `--check` prints terse status.
+`--interactive` is reserved for future approved non-secret project config writes
+and requires a terminal.
+
+Exit codes are stable:
+
+- `0` — all requirements satisfied
+- `1` — valid setup contract, but at least one requirement is missing,
+  unavailable, unauthenticated, inaccessible, expired, or invalid
+- `2` — setup planning/contract error
+- `3` — misuse, such as an unknown skill or invalid capability filter
+
+`mise-en-place health` runs the same checks for installed skills only. `doctor`
+keeps its integrity checks and adds setup warnings for installed skills.
+
 ## Existing files
 
 When a destination file already exists, `mise-en-place` compares it with the
@@ -207,6 +247,16 @@ The JSON shape is intentionally small:
   "version": "0.26",
   "operation": "install",
   "kind": "delegated",
+  "capabilities": ["query"],
+  "setup": [
+    {
+      "kind": "env",
+      "env": "ADO_ORG",
+      "value_class": "plain",
+      "required_for": ["query"],
+      "remediation": "Export ADO_ORG to the Azure DevOps organization name."
+    }
+  ],
   "targets": {
     "claude": {
       "files": [
@@ -240,6 +290,13 @@ The JSON shape is intentionally small:
 Rules:
 
 - `schema`, `name`, `version`, `operation`, `kind`, and `targets` are required.
+- `capabilities` and `setup` are optional but recommended for skills that need
+  local auth, environment variables, or external CLIs.
+- Supported setup kinds are `env`, `executable`, `azure-cli-auth`,
+  `azure-devops-token`, `azure-resource-group`, and `github-cli-auth`.
+- Supported capability values are `read`, `query`, `write`, and `deploy`.
+- `value_class` may be `plain` or `secret`; secret values are never persisted
+  by setup.
 - `operation` is one of `plan`, `install`, or `uninstall`.
 - `kind` must be `delegated`.
 - File paths must be absolute.

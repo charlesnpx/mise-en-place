@@ -14,6 +14,8 @@ name: humanizer
 version: 2.3.0
 manifest_schema: 1
 min_installer: "0.1.0"
+capabilities:
+  - read
 targets:
   claude:
     type: command
@@ -23,6 +25,12 @@ targets:
     type: skill_dir
     payload: payload/codex/
     install_to: ~/.codex/skills/humanizer/
+setup:
+  - kind: env
+    env: FIGMA_TOKEN
+    value_class: secret
+    required_for:
+      - read
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -42,6 +50,12 @@ targets:
 	if m.Targets["codex"].Type != TargetSkillDir {
 		t.Errorf("codex target type: %q", m.Targets["codex"].Type)
 	}
+	if len(m.Capabilities) != 1 || m.Capabilities[0] != CapabilityRead {
+		t.Errorf("capabilities: %+v", m.Capabilities)
+	}
+	if len(m.Setup) != 1 || m.Setup[0].Env != "FIGMA_TOKEN" || m.Setup[0].ValueClass != ValueSecret {
+		t.Errorf("setup: %+v", m.Setup)
+	}
 }
 
 func TestLoadSkillManifest_MissingFields(t *testing.T) {
@@ -60,6 +74,34 @@ func TestLoadSkillManifest_MissingFields(t *testing.T) {
 				t.Fatalf("expected error for %s, got nil", label)
 			}
 		})
+	}
+}
+
+func TestLoadSkillManifest_InvalidSetup(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "skill.yaml")
+	if err := os.WriteFile(path, []byte(`
+name: bad
+version: 0.1.0
+manifest_schema: 1
+min_installer: "0.1.0"
+capabilities:
+  - read
+targets:
+  codex:
+    type: skill_dir
+    payload: codex
+    install_to: ~/.codex/skills/bad
+setup:
+  - kind: env
+    env: TOKEN
+    required_for:
+      - deploy
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadSkillManifest(path); err == nil {
+		t.Fatal("expected required_for outside declared capabilities to fail validation")
 	}
 }
 

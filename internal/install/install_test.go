@@ -588,6 +588,115 @@ func TestDoctorAndList_ExternalTools(t *testing.T) {
 	}
 }
 
+func writeSetupFixtureSkill(t *testing.T, root, name, envName string, capabilities []string) {
+	t.Helper()
+	skillDir := filepath.Join(root, name)
+	if err := os.MkdirAll(filepath.Join(skillDir, "codex"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "codex", "SKILL.md"), []byte("# setup fixture\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var caps strings.Builder
+	for _, capability := range capabilities {
+		caps.WriteString("  - ")
+		caps.WriteString(capability)
+		caps.WriteString("\n")
+	}
+	manifest := `name: ` + name + `
+version: 0.1.0
+manifest_schema: 1
+min_installer: "0.0.0"
+capabilities:
+` + caps.String() + `targets:
+  codex:
+    type: skill_dir
+    payload: codex
+    install_to: ~/.codex/skills/` + name + `
+setup:
+  - kind: env
+    env: ` + envName + `
+    value_class: secret
+    required_for:
+      - query
+`
+	if err := os.WriteFile(filepath.Join(skillDir, "skill.yaml"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSetup_ManagedEnvMissing(t *testing.T) {
+	home := withFakeHome(t)
+	skillsRoot := filepath.Join(home, "skills")
+	writeSetupFixtureSkill(t, skillsRoot, "fixture", "FIXTURE_TOKEN", []string{"query"})
+
+	reg := &config.Registry{Managed: []string{"fixture"}}
+	outcome := EvaluateSetup(reg, Options{Target: "codex", SkillsRoot: skillsRoot}, SetupOptions{})
+	if outcome.Kind != SetupIncomplete {
+		t.Fatalf("kind = %s, want %s: %+v", outcome.Kind, SetupIncomplete, outcome)
+	}
+	if len(outcome.Results) != 1 || outcome.Results[0].State != SetupMissing {
+		t.Fatalf("results = %+v", outcome.Results)
+	}
+	if !strings.Contains(outcome.Results[0].Remediation, "FIXTURE_TOKEN") {
+		t.Fatalf("missing remediation: %+v", outcome.Results[0])
+	}
+}
+
+func TestSetup_DedupesSharedRequirements(t *testing.T) {
+	home := withFakeHome(t)
+	skillsRoot := filepath.Join(home, "skills")
+	writeSetupFixtureSkill(t, skillsRoot, "alpha", "SHARED_TOKEN", []string{"query"})
+	writeSetupFixtureSkill(t, skillsRoot, "beta", "SHARED_TOKEN", []string{"query"})
+
+	reg := &config.Registry{Managed: []string{"alpha", "beta"}}
+	outcome := EvaluateSetup(reg, Options{Target: "codex", SkillsRoot: skillsRoot}, SetupOptions{})
+	if outcome.Kind != SetupIncomplete {
+		t.Fatalf("kind = %s, want %s", outcome.Kind, SetupIncomplete)
+	}
+	if len(outcome.Results) != 1 {
+		t.Fatalf("expected deduped single result, got %+v", outcome.Results)
+	}
+	if len(outcome.Results[0].Origins) != 2 {
+		t.Fatalf("expected both origins, got %+v", outcome.Results[0].Origins)
+	}
+}
+
+func TestSetup_CapabilityFilterWithNoRequirementsIsSatisfied(t *testing.T) {
+	home := withFakeHome(t)
+	skillsRoot := filepath.Join(home, "skills")
+	skillDir := filepath.Join(skillsRoot, "fixture")
+	if err := os.MkdirAll(filepath.Join(skillDir, "codex"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "codex", "SKILL.md"), []byte("# fixture\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "skill.yaml"), []byte(`name: fixture
+version: 0.1.0
+manifest_schema: 1
+min_installer: "0.0.0"
+capabilities:
+  - deploy
+targets:
+  codex:
+    type: skill_dir
+    payload: codex
+    install_to: ~/.codex/skills/fixture
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	reg := &config.Registry{Managed: []string{"fixture"}}
+	outcome := EvaluateSetup(reg, Options{Target: "codex", SkillsRoot: skillsRoot}, SetupOptions{
+		Skill:      "fixture",
+		Capability: config.CapabilityDeploy,
+	})
+	if outcome.Kind != SetupSatisfied || len(outcome.Results) != 0 {
+		t.Fatalf("expected satisfied empty plan, got %+v", outcome)
+	}
+}
+
 func writeDelegatedRepo(t *testing.T, root, name string, behavior string) string {
 	t.Helper()
 	repo := filepath.Join(root, name+"-repo")
@@ -641,9 +750,9 @@ if [ -f "$file" ]; then
   sha=$(shasum -a 256 "$file" | awk '{print $1}')
 fi
 if [ "$op" = "install" ]; then
-  printf '{"schema":1,"name":"%s","version":"0.2.0","operation":"%s","kind":"delegated","targets":{"codex":{"files":[{"path":"%s","sha256":"%s"}]}},"warnings":[]}\n' "$json_name" "$op" "$file" "$sha"
+  printf '{"schema":1,"name":"%s","version":"0.2.0","operation":"%s","kind":"delegated","capabilities":["query"],"setup":[{"kind":"env","env":"DELEGATED_TOKEN","value_class":"secret","required_for":["query"]}],"targets":{"codex":{"files":[{"path":"%s","sha256":"%s"}]}},"warnings":[]}\n' "$json_name" "$op" "$file" "$sha"
 else
-  printf '{"schema":1,"name":"%s","version":"0.2.0","operation":"%s","kind":"delegated","targets":{"codex":{"files":[{"path":"%s"}]}},"warnings":[]}\n' "$json_name" "$op" "$file"
+  printf '{"schema":1,"name":"%s","version":"0.2.0","operation":"%s","kind":"delegated","capabilities":["query"],"setup":[{"kind":"env","env":"DELEGATED_TOKEN","value_class":"secret","required_for":["query"]}],"targets":{"codex":{"files":[{"path":"%s"}]}},"warnings":[]}\n' "$json_name" "$op" "$file"
 fi
 `
 	if err := os.WriteFile(filepath.Join(repo, "install-skill.sh"), []byte(script), 0o755); err != nil {
@@ -690,6 +799,24 @@ func TestInstall_DelegatedRunsPlanBeforeInstall(t *testing.T) {
 	sk := s.Skills["delegated"]
 	if sk.Kind != "delegated" || sk.Repo != repo || sk.Ref != "main" || sk.Version != "0.2.0" {
 		t.Fatalf("bad delegated state: %+v", sk)
+	}
+}
+
+func TestSetup_DelegatedSetupContract(t *testing.T) {
+	home := withFakeHome(t)
+	repo := writeDelegatedRepo(t, home, "delegated", "ok")
+	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"delegated": {Repo: repo, Ref: "main"},
+	}}
+	outcome := EvaluateSetup(reg, Options{Target: "codex"}, SetupOptions{
+		Skill:      "delegated",
+		Capability: config.CapabilityQuery,
+	})
+	if outcome.Kind != SetupIncomplete {
+		t.Fatalf("kind = %s, want %s: %+v", outcome.Kind, SetupIncomplete, outcome)
+	}
+	if len(outcome.Results) != 1 || outcome.Results[0].Key != "env:DELEGATED_TOKEN" {
+		t.Fatalf("unexpected results: %+v", outcome.Results)
 	}
 }
 

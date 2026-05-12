@@ -81,6 +81,32 @@ func Doctor(w io.Writer, reg *config.Registry, opts Options) error {
 		}
 	}
 
+	setupOutcome := EvaluateSetup(reg, opts, SetupOptions{InstalledOnly: true})
+	for _, warning := range setupOutcome.Warnings {
+		warnings++
+		fmt.Fprintf(w, "warn: setup: %s\n", warning)
+	}
+	for _, err := range setupOutcome.Errors {
+		issues++
+		fmt.Fprintf(w, "error: setup: %s\n", err)
+	}
+	setupWarned := false
+	for _, result := range setupOutcome.Results {
+		if result.State == SetupOK {
+			continue
+		}
+		warnings++
+		setupWarned = true
+		fmt.Fprintf(w, "warn: setup %s: %s", result.Key, result.Detail)
+		if by := setupOriginsText(result.Origins); by != "" {
+			fmt.Fprintf(w, " (required by: %s)", by)
+		}
+		fmt.Fprintln(w)
+	}
+	if len(setupOutcome.Results) > 0 && !setupWarned && len(setupOutcome.Errors) == 0 {
+		fmt.Fprintln(w, "ok: installed skill setup requirements")
+	}
+
 	fmt.Fprintf(w, "\nsummary: %d issue(s), %d warning(s)\n", issues, warnings)
 	if issues > 0 {
 		return fmt.Errorf("doctor found %d issue(s)", issues)

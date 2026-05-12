@@ -19,13 +19,15 @@ import (
 )
 
 type delegatedResult struct {
-	Schema    int                              `json:"schema"`
-	Name      string                           `json:"name"`
-	Version   string                           `json:"version"`
-	Operation string                           `json:"operation"`
-	Kind      string                           `json:"kind"`
-	Targets   map[string]delegatedTargetResult `json:"targets"`
-	Warnings  []string                         `json:"warnings"`
+	Schema       int                              `json:"schema"`
+	Name         string                           `json:"name"`
+	Version      string                           `json:"version"`
+	Operation    string                           `json:"operation"`
+	Kind         string                           `json:"kind"`
+	Capabilities []config.SetupCapability         `json:"capabilities,omitempty"`
+	Setup        []config.SetupRequirement        `json:"setup,omitempty"`
+	Targets      map[string]delegatedTargetResult `json:"targets"`
+	Warnings     []string                         `json:"warnings"`
 }
 
 type delegatedTargetResult struct {
@@ -447,6 +449,12 @@ func validateDelegatedResult(result *delegatedResult, skillName, operation strin
 	}
 	if len(result.Targets) == 0 {
 		return fmt.Errorf("delegated %s: targets are required", skillName)
+	}
+	if err := config.ValidateCapabilities(result.Capabilities, "delegated "+skillName); err != nil {
+		return err
+	}
+	if err := config.ValidateSetupRequirements(result.Setup, result.Capabilities, "delegated "+skillName); err != nil {
+		return err
 	}
 	for targetName, target := range result.Targets {
 		for _, file := range target.Files {

@@ -44,7 +44,7 @@ delegated:
     visibility: public
     optional: false
   miro-fetch:
-    repo: github.com/charlesnpx/miro-fetch
+    repo: github.com/charlesnpx/miro-fetch_legacy
     channel: latest-release
     visibility: public
     optional: false
