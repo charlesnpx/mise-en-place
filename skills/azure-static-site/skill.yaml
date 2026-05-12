@@ -1,0 +1,13 @@
+name: azure-static-site
+version: 0.1.0
+manifest_schema: 1
+min_installer: "0.1.0"
+targets:
+  claude:
+    type: skill_dir
+    payload: claude
+    install_to: ~/.claude/skills/azure-static-site
+  codex:
+    type: skill_dir
+    payload: codex
+    install_to: ~/.codex/skills/azure-static-site

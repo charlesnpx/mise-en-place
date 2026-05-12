@@ -1,0 +1,4 @@
+interface:
+  display_name: "Azure Static Site"
+  short_description: "Deploy and update Azure Static Web Apps"
+  default_prompt: "Use $azure-static-site to deploy or update a local index.html as an Azure Static Web App."

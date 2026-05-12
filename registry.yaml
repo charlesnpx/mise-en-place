@@ -13,6 +13,7 @@ managed:
   - visual-qa
   - rebase-up
   - review-pr
+  - azure-static-site
 
 delegated:
   ado-query:
