@@ -3,9 +3,10 @@
 # managed: skills authored in this repo under skills/<name>/.
 # delegated: polyrepo skills with their own install-skill.sh. Public users may
 # not have access to private/team-only delegated repos; optional delegated skills
-# are skipped by `mise-en-place install --all` unless --strict is supplied.
+# are skipped by default install unless explicitly requested.
+# experimental: managed or delegated skills excluded from default install.
 # external_tools: third-party executables used by skills. Default tools are
-# verified or installed during `mise-en-place install --all`.
+# verified or installed during default install.
 
 managed:
   - humanizer
@@ -43,11 +44,6 @@ delegated:
     channel: latest-release
     visibility: public
     optional: false
-  miro-fetch:
-    repo: github.com/charlesnpx/miro-fetch_legacy
-    channel: latest-release
-    visibility: public
-    optional: false
   convo-relay:
     repo: github.com/charlesnpx/convo-relay
     channel: latest-release
@@ -65,6 +61,10 @@ delegated:
     channel: latest-release
     visibility: public
     optional: false
+experimental:
+  - azure-static-site
+  - browse
+  - specops
 
 external_tools:
   markitdown:

@@ -13,6 +13,7 @@ import (
 type Registry struct {
 	Managed       []string                    `yaml:"managed"`
 	Delegated     map[string]DelegatedRepo    `yaml:"delegated"`
+	Experimental  []string                    `yaml:"experimental"`
 	ExternalTools map[string]ExternalToolSpec `yaml:"external_tools"`
 }
 
@@ -119,6 +120,20 @@ func (r *Registry) Validate() error {
 			return fmt.Errorf("registry.yaml: external tool %s missing package", name)
 		}
 	}
+	experimentalSeen := map[string]bool{}
+	for _, name := range r.Experimental {
+		if experimentalSeen[name] {
+			return fmt.Errorf("registry.yaml: experimental %s declared more than once", name)
+		}
+		experimentalSeen[name] = true
+		owner := seen[name]
+		if owner == "" {
+			return fmt.Errorf("registry.yaml: experimental %s is not a managed or delegated skill", name)
+		}
+		if owner == "external tool" {
+			return fmt.Errorf("registry.yaml: experimental %s must be a managed or delegated skill, not an external tool", name)
+		}
+	}
 	return nil
 }
 
@@ -147,4 +162,15 @@ func (r *Registry) Kind(name string) string {
 		return "external_tool"
 	}
 	return ""
+}
+
+// IsExperimental reports whether a managed or delegated skill is excluded from
+// the default install set and requires explicit opt-in.
+func (r *Registry) IsExperimental(name string) bool {
+	for _, experimental := range r.Experimental {
+		if experimental == name {
+			return true
+		}
+	}
+	return false
 }

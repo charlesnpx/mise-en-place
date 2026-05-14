@@ -105,12 +105,13 @@ func newInstallCmd() *cobra.Command {
 				return err
 			}
 			opts := install.Options{
-				Target:           target,
-				Backup:           backup,
-				RunningInstaller: Version,
-				ManifestSchema:   ManifestSchema,
-				SkillsRoot:       source.SkillsRoot,
-				Strict:           strict,
+				Target:              target,
+				Backup:              backup,
+				RunningInstaller:    Version,
+				ManifestSchema:      ManifestSchema,
+				SkillsRoot:          source.SkillsRoot,
+				Strict:              strict,
+				IncludeExperimental: all,
 			}
 			if all {
 				return install.All(source.Registry, opts)
@@ -125,7 +126,7 @@ func newInstallCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&target, "target", "all", "claude | codex | tools | all")
-	cmd.Flags().BoolVar(&all, "all", false, "install every skill in the registry")
+	cmd.Flags().BoolVar(&all, "all", false, "install every skill in the registry, including experimental skills")
 	cmd.Flags().BoolVar(&backup, "backup", false, "back up divergent existing files to <filename>.backup and overwrite")
 	cmd.Flags().BoolVar(&strict, "strict", false, "fail install --all if optional/private delegated skills cannot be installed")
 	return cmd

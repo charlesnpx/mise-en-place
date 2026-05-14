@@ -34,8 +34,8 @@ If using `go install`, make sure `$(go env GOPATH)/bin` is on your `PATH`.
 ## Quick start
 
 ```sh
-mise-en-place install                             # install available skills and default external tools
-mise-en-place install --all                       # explicit alias for installing everything
+mise-en-place install                             # install default skills and default external tools
+mise-en-place install --all                       # install default and experimental skills
 mise-en-place install humanizer                   # install one skill (both targets by default)
 mise-en-place install markitdown                  # verify/install one external tool
 mise-en-place install humanizer --target claude   # install only the Claude payload
@@ -62,9 +62,13 @@ point at another registry/skills tree while testing local changes.
   `channel: latest-release`. The latest-release channel resolves the highest
   stable `vMAJOR.MINOR.PATCH` git tag at install/upgrade time. Delegated entries
   may be marked `visibility: private` and `optional: true`. Direct install of a
-  private delegated skill should fail clearly if the user lacks access;
-  `install --all` skips optional delegated skills by default and
-  `install --all --strict` turns those skips into errors.
+  private delegated skill should fail clearly if the user lacks access. Optional
+  delegated failures are warnings unless `--strict` is supplied.
+- **Experimental skills** are managed or delegated skills listed under
+  `experimental:` in `registry.yaml`. Bare `mise-en-place install` skips them.
+  `mise-en-place install --all` includes them and prints a warning before each
+  experimental install attempt. `mise-en-place install <skill>` also installs a
+  named experimental skill with the same warning.
 - **External tools** are third-party executables used by skills. They are
   declared in `registry.yaml`, checked by `doctor`, shown by `list`, and
   installed during `install --all` when `install_by_default: true`. The first
@@ -88,15 +92,15 @@ skills; private delegated skills are intentionally optional. The intended UX is:
 
 - `mise-en-place install browse` — fail clearly if the repo is private and the
   user lacks access.
-- `mise-en-place install --all` — skip optional private delegated skills with a
-  warning.
+- `mise-en-place install` — skip experimental private delegated skills.
+- `mise-en-place install --all` — attempt experimental skills too; optional
+  private delegated failures remain warnings.
 - `mise-en-place install --all --strict` — fail if any delegated skill cannot be
   installed.
 
 Delegated repos are cloned into `~/.cache/mise-en-place/repos/<skill>/`,
 planned through their installer contract, collision-checked, and then installed.
-Optional delegated failures are warnings for `install --all` unless `--strict`
-is supplied.
+Optional delegated failures are warnings unless `--strict` is supplied.
 
 Delegated source examples:
 
@@ -114,6 +118,8 @@ delegated:
     fallback_ref: main
     visibility: private
     optional: true
+experimental:
+  - browse
 ```
 
 Use exact `ref` pins when reproducibility matters. Use

@@ -39,7 +39,10 @@ type Options struct {
 	// Defaults to "skills" relative to the working directory.
 	SkillsRoot string
 	Strict     bool // fail install --all when delegated/optional skills cannot be installed
-	Force      bool // reinstall even when an upgrade source is already current
+	// IncludeExperimental includes registry entries listed under experimental.
+	// The default install set excludes them; explicit --all and named installs opt in.
+	IncludeExperimental bool
+	Force               bool // reinstall even when an upgrade source is already current
 }
 
 func (o Options) skillsRoot() string {
@@ -60,6 +63,7 @@ func One(name string, reg *config.Registry, opts Options) error {
 	if kind == "" {
 		return fmt.Errorf("unknown skill: %s (not in registry.yaml)", name)
 	}
+	warnExperimental(name, reg)
 	if kind == "delegated" {
 		return installDelegated(name, reg.Delegated[name], opts)
 	}
@@ -69,12 +73,16 @@ func One(name string, reg *config.Registry, opts Options) error {
 	return installManaged(name, opts)
 }
 
-// All installs every managed skill in the registry. Delegated skills are
-// skipped by default when optional/private; --strict turns skipped delegated
-// skills into errors.
+// All installs the default registry set. Experimental skills are skipped unless
+// IncludeExperimental is true. Delegated skills are skipped by default when
+// optional/private; --strict turns skipped delegated skills into errors.
 func All(reg *config.Registry, opts Options) error {
 	var errs []string
 	for _, name := range reg.Managed {
+		if shouldSkipExperimental(name, reg, opts) {
+			continue
+		}
+		warnExperimental(name, reg)
 		if err := installManaged(name, opts); err != nil {
 			errs = append(errs, fmt.Sprintf("%s: %v", name, err))
 		}
@@ -86,6 +94,10 @@ func All(reg *config.Registry, opts Options) error {
 	}
 	sort.Strings(dnames)
 	for _, name := range dnames {
+		if shouldSkipExperimental(name, reg, opts) {
+			continue
+		}
+		warnExperimental(name, reg)
 		d := reg.Delegated[name]
 		err := installDelegated(name, d, opts)
 		if err == nil {
@@ -123,6 +135,16 @@ func All(reg *config.Registry, opts Options) error {
 		return fmt.Errorf("install --all completed with errors:\n  %s", strings.Join(errs, "\n  "))
 	}
 	return nil
+}
+
+func shouldSkipExperimental(name string, reg *config.Registry, opts Options) bool {
+	return reg.IsExperimental(name) && !opts.IncludeExperimental
+}
+
+func warnExperimental(name string, reg *config.Registry) {
+	if reg.IsExperimental(name) {
+		fmt.Fprintf(os.Stdout, "warn: experimental skill %s is included in this install; behavior and setup may change\n", name)
+	}
 }
 
 // Upgrade reinstalls a single skill at the current source version.
@@ -722,7 +744,11 @@ func PrintList(w io.Writer, s *state.State, reg *config.Registry) {
 		if _, ok := s.Skills[n]; ok {
 			marker = "✓ "
 		}
-		fmt.Fprintf(w, "%s%s (managed)\n", marker, n)
+		attrs := []string{"managed"}
+		if reg.IsExperimental(n) {
+			attrs = append(attrs, "experimental")
+		}
+		fmt.Fprintf(w, "%s%s (%s)\n", marker, n, strings.Join(attrs, ", "))
 	}
 	dnames := make([]string, 0, len(reg.Delegated))
 	for n := range reg.Delegated {
@@ -741,6 +767,9 @@ func PrintList(w io.Writer, s *state.State, reg *config.Registry) {
 		}
 		if d.Optional {
 			attrs = append(attrs, "optional")
+		}
+		if reg.IsExperimental(n) {
+			attrs = append(attrs, "experimental")
 		}
 		source := d.Ref
 		if d.Channel != "" {
