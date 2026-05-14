@@ -6,14 +6,14 @@ argument-hint: "[starting-branch] branch-1 branch-2 branch-3 ... (ordered chain 
 
 You are performing a careful, verified walk up a **stacked branch chain**, rebasing each branch onto its parent so that any changes encountered along the way propagate upward naturally.
 
-The default base branch is **`echo-master`** (not `master`), unless the user specifies a different base.
+The default base branch is **`main`**, unless the user specifies a different base.
 
 ## What is a stacked branch chain?
 
 A linear sequence of branches where each is based on the previous:
 
 ```
-echo-master (or another specified base)
+main (or another specified base)
   └─ branch-1
        └─ branch-2
             └─ branch-3
@@ -28,9 +28,9 @@ You don't need to know *which* branch has changes. You simply walk the chain fro
 
 **No arguments:** Ask the user for the ordered list of branches from root to tip.
 
-**Full chain provided:** e.g., `branch-1 branch-2 branch-3 branch-4`. The first branch is the root of the chain (its base is `echo-master` unless the user says otherwise). Every subsequent branch rebases onto the one before it. ALL branches in the list get rebased — starting with branch-1 onto the base, then branch-2 onto branch-1, etc.
+**Full chain provided:** e.g., `branch-1 branch-2 branch-3 branch-4`. The first branch is the root of the chain (its base is `main` unless the user says otherwise). Every subsequent branch rebases onto the one before it. ALL branches in the list get rebased — starting with branch-1 onto the base, then branch-2 onto branch-1, etc.
 
-**Starting point + chain:** The user may say something like "start from branch-2" and provide the rest. In this case, branch-2's parent (the branch before it, or master if it's the root) is the fixed base, and you rebase from branch-2 upward.
+**Starting point + chain:** The user may say something like "start from branch-2" and provide the rest. In this case, branch-2's parent (the branch before it, or main if it's the root) is the fixed base, and you rebase from branch-2 upward.
 
 In all cases, **you MUST know the complete ordered chain and the base branch before proceeding.** If unsure, ASK. Do not guess branch order from names — naming conventions vary.
 
@@ -40,8 +40,8 @@ Print the chain clearly:
 
 ```
 Branch chain (root → tip):
-  base: master
-  1. branch-A          ← rebase onto master
+  base: main
+  1. branch-A          ← rebase onto main
   2. branch-B          ← rebase onto branch-A
   3. branch-C          ← rebase onto branch-B
   4. branch-D          ← rebase onto branch-C
@@ -106,7 +106,7 @@ git checkout <branch>
 git rebase <its-parent-branch>
 ```
 
-The parent is whichever branch comes immediately before it in the chain (or master/the base for the first one). Since you process in order, each parent has already been rebased by the time you reach its child.
+The parent is whichever branch comes immediately before it in the chain (or main/the base for the first one). Since you process in order, each parent has already been rebased by the time you reach its child.
 
 **If the rebase reports "Current branch is up to date":** That's fine — no changes to propagate at this level. Record it as a no-op and move on.
 

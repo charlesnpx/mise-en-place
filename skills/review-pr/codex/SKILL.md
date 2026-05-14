@@ -220,7 +220,7 @@ this will not work correctly for UTC dates which have a time that are still the 
 ```
 
 ```
-can amotUserRoles ever be falsey?
+can templateUserRoles ever be falsey?
 ```
 
 ```
@@ -240,7 +240,7 @@ validation import, validationSpy, mockValidateStatusChangeInner, and fakeReposit
 ```
 
 ```
-In the case amotTemplateNum is `''` this will result in `''` being the value not '0000' because `??` only checks if the left side of the expression is `null | undefined`
+In the case templateNumber is `''` this will result in `''` being the value not '0000' because `??` only checks if the left side of the expression is `null | undefined`
 ```
 
 ```

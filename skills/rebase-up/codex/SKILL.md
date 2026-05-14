@@ -6,14 +6,14 @@ argument-hint: "[starting/base branch] branch-1 branch-2 branch-3 ... (ordered c
 
 You are performing a careful, verified walk up a stacked branch chain, rebasing each branch onto its parent so that accumulated changes propagate upward naturally.
 
-The default base branch is `echo-master`, not `master`, unless the user specifies a different base.
+The default base branch is `main`, unless the user specifies a different base.
 
 ## What is a stacked branch chain?
 
 A linear sequence of branches where each is based on the previous:
 
 ```text
-echo-master (or another specified base)
+main (or another specified base)
   -> branch-1
        -> branch-2
             -> branch-3
@@ -28,7 +28,7 @@ The user provides the branch chain in their request. There are three modes:
 
 **No arguments:** Ask the user for the ordered list of branches from root to tip.
 
-**Full chain provided:** Example: `branch-1 branch-2 branch-3 branch-4`. The first branch is the root of the chain; its base is `echo-master` unless the user says otherwise. Every branch in the list gets rebased, starting with `branch-1` onto the base, then `branch-2` onto `branch-1`, and so on.
+**Full chain provided:** Example: `branch-1 branch-2 branch-3 branch-4`. The first branch is the root of the chain; its base is `main` unless the user says otherwise. Every branch in the list gets rebased, starting with `branch-1` onto the base, then `branch-2` onto `branch-1`, and so on.
 
 **Starting point plus chain:** The user may say something like "start from branch-2" and provide the rest. In this case, `branch-2`'s parent, or the base if it is the root, is fixed and not modified. Rebase from `branch-2` upward.
 
@@ -40,8 +40,8 @@ Print the chain clearly:
 
 ```text
 Branch chain (root -> tip):
-  base: echo-master
-  1. branch-A          <- rebase onto echo-master
+  base: main
+  1. branch-A          <- rebase onto main
   2. branch-B          <- rebase onto branch-A
   3. branch-C          <- rebase onto branch-B
   4. branch-D          <- rebase onto branch-C
