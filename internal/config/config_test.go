@@ -124,6 +124,8 @@ delegated:
     ref: main
     visibility: private
     optional: true
+experimental:
+  - browse
 external_tools:
   markitdown:
     executable: markitdown
@@ -158,6 +160,9 @@ external_tools:
 	if !r.Delegated["browse"].IsPrivate() || !r.Delegated["browse"].IsOptional() {
 		t.Errorf("browse should parse as private optional: %+v", r.Delegated["browse"])
 	}
+	if !r.IsExperimental("browse") || r.IsExperimental("keyframe") {
+		t.Errorf("experimental flags parsed incorrectly: %+v", r.Experimental)
+	}
 	if got := r.ExternalTools["markitdown"].Package; got != "markitdown[all]" {
 		t.Errorf("markitdown package: %q", got)
 	}
@@ -186,6 +191,28 @@ delegated:
   tool:
     repo: github.com/charlesnpx/tool
     channel: nightly
+`,
+		"unknown experimental": `
+managed:
+  - tool
+experimental:
+  - other
+`,
+		"external tool experimental": `
+external_tools:
+  markitdown:
+    executable: markitdown
+    manager: pipx
+    package: markitdown
+experimental:
+  - markitdown
+`,
+		"duplicate experimental": `
+managed:
+  - tool
+experimental:
+  - tool
+  - tool
 `,
 	}
 	for name, body := range cases {

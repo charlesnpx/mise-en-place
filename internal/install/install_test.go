@@ -2,6 +2,7 @@ package install
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,6 +37,36 @@ func withNonInteractiveStdin(t *testing.T) {
 		os.Stdin = original
 		_ = r.Close()
 	})
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	original := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+	restored := false
+	defer func() {
+		if !restored {
+			os.Stdout = original
+			_ = w.Close()
+			_ = r.Close()
+		}
+	}()
+	fn()
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = original
+	restored = true
+	defer r.Close()
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
 }
 
 func writeFakeExecutable(t *testing.T, dir, name, body string) string {
@@ -130,6 +161,84 @@ func TestInstall_Managed_DualTarget(t *testing.T) {
 	}
 	if len(sk.Targets["claude"].Files) != 1 || sk.Targets["claude"].Files[0].Path != claudePath {
 		t.Errorf("claude file record: %+v", sk.Targets["claude"])
+	}
+}
+
+func TestInstallAll_SkipsExperimentalUnlessIncluded(t *testing.T) {
+	home := withFakeHome(t)
+	skillsRoot := filepath.Join(home, "skills")
+	stableCodexDir := filepath.Join(home, ".codex", "skills", "stable/")
+	experimentalCodexDir := filepath.Join(home, ".codex", "skills", "experimental/")
+	writeFixtureSkill(t, skillsRoot, "stable", filepath.Join(home, ".claude", "commands", "stable.md"), stableCodexDir)
+	writeFixtureSkill(t, skillsRoot, "experimental", filepath.Join(home, ".claude", "commands", "experimental.md"), experimentalCodexDir)
+
+	reg := &config.Registry{
+		Managed:      []string{"stable", "experimental"},
+		Experimental: []string{"experimental"},
+	}
+	opts := Options{
+		Target:           "codex",
+		RunningInstaller: "0.1.0",
+		ManifestSchema:   1,
+		SkillsRoot:       skillsRoot,
+	}
+
+	out := captureStdout(t, func() {
+		if err := All(reg, opts); err != nil {
+			t.Fatalf("default install: %v", err)
+		}
+	})
+	if strings.Contains(out, "experimental skill") {
+		t.Fatalf("default install should not warn for skipped experimental skill: %q", out)
+	}
+	if _, err := os.Stat(filepath.Join(stableCodexDir, "SKILL.md")); err != nil {
+		t.Fatalf("stable skill should be installed by default: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(experimentalCodexDir, "SKILL.md")); !os.IsNotExist(err) {
+		t.Fatalf("experimental skill should be skipped by default, stat err: %v", err)
+	}
+
+	opts.IncludeExperimental = true
+	out = captureStdout(t, func() {
+		if err := All(reg, opts); err != nil {
+			t.Fatalf("install --all: %v", err)
+		}
+	})
+	if !strings.Contains(out, "warn: experimental skill experimental is included in this install") {
+		t.Fatalf("expected experimental warning, got: %q", out)
+	}
+	if _, err := os.Stat(filepath.Join(experimentalCodexDir, "SKILL.md")); err != nil {
+		t.Fatalf("experimental skill should be installed with include flag: %v", err)
+	}
+}
+
+func TestInstallOne_ExperimentalWarnsAndInstalls(t *testing.T) {
+	home := withFakeHome(t)
+	skillsRoot := filepath.Join(home, "skills")
+	codexDir := filepath.Join(home, ".codex", "skills", "experimental/")
+	writeFixtureSkill(t, skillsRoot, "experimental", filepath.Join(home, ".claude", "commands", "experimental.md"), codexDir)
+
+	reg := &config.Registry{
+		Managed:      []string{"experimental"},
+		Experimental: []string{"experimental"},
+	}
+	opts := Options{
+		Target:           "codex",
+		RunningInstaller: "0.1.0",
+		ManifestSchema:   1,
+		SkillsRoot:       skillsRoot,
+	}
+
+	out := captureStdout(t, func() {
+		if err := One("experimental", reg, opts); err != nil {
+			t.Fatalf("install one: %v", err)
+		}
+	})
+	if !strings.Contains(out, "warn: experimental skill experimental is included in this install") {
+		t.Fatalf("expected experimental warning, got: %q", out)
+	}
+	if _, err := os.Stat(filepath.Join(codexDir, "SKILL.md")); err != nil {
+		t.Fatalf("experimental named install should install: %v", err)
 	}
 }
 
