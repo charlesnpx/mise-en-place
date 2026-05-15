@@ -163,27 +163,42 @@ func doctorDelegated(w io.Writer, s *state.State, name string, repo config.Deleg
 	if err != nil {
 		return err
 	}
-	installer, err := delegatedInstaller(checkout.Dir)
-	if err != nil {
-		return err
-	}
 	target := opts.Target
 	if target == "" {
 		target = "all"
 	}
-	planned, err := runDelegatedInstaller(installer, name, "plan", target, false, "")
-	if err != nil {
-		return err
+	if !(target == "tools" && len(repo.Tools) > 0) {
+		installer, err := delegatedInstaller(checkout.Dir)
+		if err != nil {
+			return err
+		}
+		planned, err := runDelegatedInstaller(installer, name, "plan", target, false, "")
+		if err != nil {
+			return err
+		}
+		plan, err := delegatedPlan(planned)
+		if err != nil {
+			return err
+		}
+		if err := checkCollisions(s, name, plan); err != nil {
+			return err
+		}
+		if err := checkDestinationConflicts(s, name, plan); err != nil {
+			return err
+		}
 	}
-	plan, err := delegatedPlan(planned)
-	if err != nil {
-		return err
+	if delegatedPipxToolsRequested(target) {
+		for _, tool := range repo.Tools {
+			path, ok := externalToolPath(tool.Executable)
+			if !ok {
+				return fmt.Errorf("missing delegated tool executable %s; install with: pipx install --force %s", tool.Executable, checkout.Dir)
+			}
+			fmt.Fprintf(w, "ok: delegated %s tool %s found at %s\n", name, tool.Executable, path)
+		}
 	}
-	if err := checkCollisions(s, name, plan); err != nil {
-		return err
-	}
-	if err := checkDestinationConflicts(s, name, plan); err != nil {
-		return err
+	if target == "tools" && len(repo.Tools) > 0 {
+		fmt.Fprintf(w, "ok: delegated %s tool contract\n", name)
+		return nil
 	}
 	if checkout.FallbackUsed {
 		fmt.Fprintf(w, "ok: delegated %s installer plan contract (fallback %s)\n", name, checkout.ResolvedRef)
@@ -194,6 +209,15 @@ func doctorDelegated(w io.Writer, s *state.State, name string, repo config.Deleg
 }
 
 func doctorInstalled(w io.Writer, name string, sk state.Skill) error {
+	for _, tool := range sk.Tools {
+		path, ok := externalToolPath(tool.Executable)
+		if !ok {
+			return fmt.Errorf("delegated tool missing %s (was %s)", tool.Executable, tool.Path)
+		}
+		if tool.Path != "" && path != tool.Path {
+			return fmt.Errorf("delegated tool path changed for %s: %s -> %s", tool.Executable, tool.Path, path)
+		}
+	}
 	for targetName, target := range sk.Targets {
 		for _, file := range target.Files {
 			if _, err := os.Stat(file.Path); err != nil {
@@ -208,6 +232,6 @@ func doctorInstalled(w io.Writer, name string, sk state.Skill) error {
 			}
 		}
 	}
-	fmt.Fprintf(w, "ok: installed %s files match state\n", name)
+	fmt.Fprintf(w, "ok: installed %s files and tools match state\n", name)
 	return nil
 }

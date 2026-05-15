@@ -119,6 +119,11 @@ delegated:
     fallback_ref: main
     visibility: public
     optional: false
+    tools:
+      - executable: keyframe
+        manager: pipx
+        package: keyframe
+        install_from: checkout
   browse:
     repo: github.com/charlesnpx/browse
     ref: main
@@ -153,6 +158,9 @@ external_tools:
 	}
 	if got := r.Delegated["keyframe"].Channel; got != "latest-release" {
 		t.Errorf("keyframe channel: %q", got)
+	}
+	if len(r.Delegated["keyframe"].Tools) != 1 || r.Delegated["keyframe"].Tools[0].Executable != "keyframe" {
+		t.Errorf("keyframe tools: %+v", r.Delegated["keyframe"].Tools)
 	}
 	if r.Kind("markitdown") != "external_tool" {
 		t.Errorf("markitdown kind: %s", r.Kind("markitdown"))
@@ -259,5 +267,25 @@ external_tools:
 	}
 	if _, err := LoadRegistry(path); err == nil {
 		t.Fatal("expected invalid external tool manager to fail validation")
+	}
+}
+
+func TestLoadRegistry_InvalidDelegatedTool(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "registry.yaml")
+	if err := os.WriteFile(path, []byte(`
+delegated:
+  keyframe:
+    repo: github.com/charlesnpx/keyframe
+    ref: main
+    tools:
+      - executable: keyframe
+        manager: pip
+        package: keyframe
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadRegistry(path); err == nil {
+		t.Fatal("expected invalid delegated tool manager to fail validation")
 	}
 }

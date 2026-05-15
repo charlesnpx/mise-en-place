@@ -33,12 +33,22 @@ delegated:
     fallback_ref: main
     visibility: private
     optional: true
+    tools:
+      - executable: browse
+        manager: pipx
+        package: browse
+        install_from: checkout
   keyframe:
     repo: github.com/charlesnpx/keyframe
     channel: latest-release
     fallback_ref: main
     visibility: public
     optional: false
+    tools:
+      - executable: keyframe
+        manager: pipx
+        package: keyframe
+        install_from: checkout
   figma-fetch:
     repo: github.com/charlesnpx/figma-fetch
     channel: latest-release
@@ -50,12 +60,22 @@ delegated:
     fallback_ref: main
     visibility: private
     optional: true
+    tools:
+      - executable: convo-relay
+        manager: pipx
+        package: convo-relay
+        install_from: checkout
   convo-porter:
     repo: github.com/charlesnpx/convo-porter
     channel: latest-release
     fallback_ref: main
     visibility: public
     optional: false
+    tools:
+      - executable: convo-porter
+        manager: pipx
+        package: convo-porter
+        install_from: checkout
   specops:
     repo: github.com/charlesnpx/specops
     channel: latest-release

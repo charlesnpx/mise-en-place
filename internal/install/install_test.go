@@ -78,6 +78,35 @@ func writeFakeExecutable(t *testing.T, dir, name, body string) string {
 	return path
 }
 
+func writeFakePipx(t *testing.T, dir string) string {
+	t.Helper()
+	script := `#!/bin/sh
+set -eu
+echo "$@" >> "$HOME/pipx.log"
+if [ "$1" = "install" ]; then
+  mkdir -p "$PIPX_FAKE_BIN"
+  printf '#!/bin/sh\nprintf fake-tool\\n\n' > "$PIPX_FAKE_BIN/$PIPX_FAKE_EXE"
+  chmod 755 "$PIPX_FAKE_BIN/$PIPX_FAKE_EXE"
+elif [ "$1" = "uninstall" ]; then
+  rm -f "$PIPX_FAKE_BIN/$PIPX_FAKE_EXE"
+fi
+`
+	return writeFakeExecutable(t, dir, "pipx", script)
+}
+
+func withFakePipx(t *testing.T, home, executable string) string {
+	t.Helper()
+	bin := filepath.Join(home, "fake-bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFakePipx(t, bin)
+	t.Setenv("PIPX_FAKE_BIN", bin)
+	t.Setenv("PIPX_FAKE_EXE", executable)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return bin
+}
+
 // writeFixtureSkill creates a minimal managed skill on disk and returns the
 // path to its directory.
 func writeFixtureSkill(t *testing.T, root, name, claudePath, codexDirPath string) string {
@@ -908,6 +937,172 @@ func TestInstall_DelegatedRunsPlanBeforeInstall(t *testing.T) {
 	sk := s.Skills["delegated"]
 	if sk.Kind != "delegated" || sk.Repo != repo || sk.Ref != "main" || sk.Version != "0.2.0" {
 		t.Fatalf("bad delegated state: %+v", sk)
+	}
+}
+
+func TestInstall_DelegatedPipxToolInstallsFromResolvedCheckout(t *testing.T) {
+	home := withFakeHome(t)
+	bin := withFakePipx(t, home, "delegated")
+	repo := writeDelegatedRepo(t, home, "delegated", "ok")
+	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"delegated": {
+			Repo: repo,
+			Ref:  "main",
+			Tools: []config.DelegatedToolSpec{{
+				Executable:  "delegated",
+				Manager:     "pipx",
+				Package:     "delegated",
+				InstallFrom: "checkout",
+			}},
+		},
+	}}
+	if err := One("delegated", reg, Options{Target: "codex"}); err != nil {
+		t.Fatalf("install delegated: %v", err)
+	}
+	logBody, err := os.ReadFile(filepath.Join(home, "pipx.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(logBody), "install --force "+filepath.Join(home, ".cache", "mise-en-place", "repos", "delegated")) {
+		t.Fatalf("pipx should install from resolved checkout, got:\n%s", logBody)
+	}
+	s, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sk := s.Skills["delegated"]
+	if len(sk.Tools) != 1 || sk.Tools[0].Executable != "delegated" || sk.Tools[0].Path != filepath.Join(bin, "delegated") {
+		t.Fatalf("bad delegated tool state: %+v", sk.Tools)
+	}
+	if len(sk.Targets["codex"].Files) != 1 {
+		t.Fatalf("codex target should still be recorded: %+v", sk.Targets)
+	}
+}
+
+func TestInstall_DelegatedPipxToolTargetToolsSkipsInstaller(t *testing.T) {
+	home := withFakeHome(t)
+	withFakePipx(t, home, "delegated")
+	repo := writeDelegatedRepo(t, home, "delegated", "ok")
+	pyproject := `[project]
+name = "delegated"
+version = "0.7.0"
+`
+	if err := os.WriteFile(filepath.Join(repo, "pyproject.toml"), []byte(pyproject), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(t, repo, "git", "add", ".")
+	run(t, repo, "git", "commit", "-m", "add pyproject")
+	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"delegated": {
+			Repo: repo,
+			Ref:  "main",
+			Tools: []config.DelegatedToolSpec{{
+				Executable: "delegated",
+				Manager:    "pipx",
+				Package:    "delegated",
+			}},
+		},
+	}}
+	if err := One("delegated", reg, Options{Target: "tools"}); err != nil {
+		t.Fatalf("install delegated tools: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, "installer.log")); !os.IsNotExist(err) {
+		t.Fatalf("target tools should not run delegated installer, stat err: %v", err)
+	}
+	s, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sk := s.Skills["delegated"]
+	if sk.Version != "0.7.0" {
+		t.Fatalf("expected pyproject version for tools-only install, got %+v", sk)
+	}
+	if len(sk.Targets) != 0 || len(sk.Tools) != 1 {
+		t.Fatalf("expected only delegated tool state, got targets=%+v tools=%+v", sk.Targets, sk.Tools)
+	}
+}
+
+func TestDoctor_DelegatedPipxToolReportsMissingExecutable(t *testing.T) {
+	home := withFakeHome(t)
+	repo := writeDelegatedRepo(t, home, "delegated", "ok")
+	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"delegated": {
+			Repo: repo,
+			Ref:  "main",
+			Tools: []config.DelegatedToolSpec{{
+				Executable: "delegated",
+				Manager:    "pipx",
+				Package:    "delegated",
+			}},
+		},
+	}}
+	var out bytes.Buffer
+	err := Doctor(&out, reg, Options{Target: "tools"})
+	if err == nil || !strings.Contains(out.String(), "missing delegated tool executable delegated") {
+		t.Fatalf("expected delegated tool doctor error, err=%v out=\n%s", err, out.String())
+	}
+}
+
+func TestUpgrade_DelegatedPipxToolReinstallsWhenExecutableMissing(t *testing.T) {
+	home := withFakeHome(t)
+	bin := withFakePipx(t, home, "delegated")
+	repo := writeDelegatedRepo(t, home, "delegated", "ok")
+	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"delegated": {
+			Repo: repo,
+			Ref:  "main",
+			Tools: []config.DelegatedToolSpec{{
+				Executable: "delegated",
+				Manager:    "pipx",
+				Package:    "delegated",
+			}},
+		},
+	}}
+	if err := One("delegated", reg, Options{Target: "codex"}); err != nil {
+		t.Fatalf("install delegated: %v", err)
+	}
+	if err := os.Remove(filepath.Join(bin, "delegated")); err != nil {
+		t.Fatal(err)
+	}
+	if err := Upgrade("delegated", reg, Options{Target: "codex"}); err != nil {
+		t.Fatalf("upgrade delegated: %v", err)
+	}
+	logBody, err := os.ReadFile(filepath.Join(home, "pipx.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(logBody), "install --force"); got != 2 {
+		t.Fatalf("expected upgrade to reinstall missing delegated tool, got %d installs:\n%s", got, logBody)
+	}
+}
+
+func TestUninstall_DelegatedPipxToolCallsPipxUninstall(t *testing.T) {
+	home := withFakeHome(t)
+	withFakePipx(t, home, "delegated")
+	repo := writeDelegatedRepo(t, home, "delegated", "ok")
+	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"delegated": {
+			Repo: repo,
+			Ref:  "main",
+			Tools: []config.DelegatedToolSpec{{
+				Executable: "delegated",
+				Manager:    "pipx",
+				Package:    "delegated",
+			}},
+		},
+	}}
+	if err := One("delegated", reg, Options{Target: "codex"}); err != nil {
+		t.Fatalf("install delegated: %v", err)
+	}
+	if err := Uninstall("delegated"); err != nil {
+		t.Fatalf("uninstall delegated: %v", err)
+	}
+	logBody, err := os.ReadFile(filepath.Join(home, "pipx.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(logBody), "uninstall delegated") {
+		t.Fatalf("expected pipx uninstall, got:\n%s", logBody)
 	}
 }
 
