@@ -28,6 +28,16 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		Targets: map[string]TargetRecord{
 			"claude": {Files: []FileRecord{{Path: "/x/humanizer.md", SHA256: "deadbeef"}}},
 		},
+		Tools: []DelegatedTool{{
+			Executable:    "humanizer",
+			Path:          "/x/bin/humanizer",
+			Manager:       "pipx",
+			Package:       "humanizer",
+			InstallSource: "/x/repo",
+			Installed:     true,
+			InstalledAt:   time.Now().UTC().Truncate(time.Second),
+			VerifiedAt:    time.Now().UTC().Truncate(time.Second),
+		}},
 		InstalledAt: time.Now().UTC().Truncate(time.Second),
 	}
 	if err := Save(in); err != nil {
@@ -43,6 +53,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if got := out.Skills["humanizer"].Version; got != "2.3.0" {
 		t.Errorf("humanizer version: got %q", got)
+	}
+	if len(out.Skills["humanizer"].Tools) != 1 || out.Skills["humanizer"].Tools[0].Executable != "humanizer" {
+		t.Errorf("delegated tools roundtrip: %+v", out.Skills["humanizer"].Tools)
 	}
 }
 

@@ -207,14 +207,17 @@ func setupRegistrations(reg *config.Registry, opts Options, setupOpts SetupOptio
 			}
 			continue
 		}
+		target := opts.Target
+		if target == "" {
+			target = "all"
+		}
+		if target == "tools" && len(repo.Tools) > 0 {
+			continue
+		}
 		installer, err := delegatedInstaller(checkout.Dir)
 		if err != nil {
 			errors = append(errors, fmt.Sprintf("delegated %s: %v", name, err))
 			continue
-		}
-		target := opts.Target
-		if target == "" {
-			target = "all"
 		}
 		planned, err := runDelegatedInstaller(installer, name, "plan", target, false, "")
 		if err != nil {

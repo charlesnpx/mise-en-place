@@ -161,6 +161,30 @@ External tools are recorded in state after verification, but mise-en-place does
 not own or hash their files. `uninstall <tool>` forgets the state record and
 leaves the executable installed.
 
+Delegated repos may also declare tools that belong to that repo:
+
+```yaml
+delegated:
+  keyframe:
+    repo: github.com/charlesnpx/keyframe
+    channel: latest-release
+    tools:
+      - executable: keyframe
+        manager: pipx
+        package: keyframe
+        install_from: checkout
+```
+
+Delegated pipx tools are installed from the resolved checkout:
+
+```sh
+pipx install --force ~/.cache/mise-en-place/repos/keyframe
+```
+
+These tools are recorded under the delegated skill in state. Unlike global
+external tools, `uninstall <skill>` removes delegated pipx tools with
+`pipx uninstall <package>`.
+
 ## Setup and health
 
 Skills may declare setup requirements for one or more capabilities:
@@ -319,10 +343,16 @@ Rules:
 It maps staged paths back to the user's home directory and applies the same
 ownership, diff, backup, and state flow used for managed skills.
 
+Python package CLIs should not create `~/.local/bin` shims from their delegated
+installer. Declare the pipx tool in `registry.yaml` instead. Such installers
+should still accept `--target tools --json` and may return an empty tools target:
+`"tools": {"files": []}`.
+
 For delegated upgrades, `mise-en-place` resolves the current source first and
 skips the reinstall when the installed version, resolved ref, and resolved
-commit are already current. Use `mise-en-place upgrade <skill> --force` to
-reinstall the current resolved version.
+commit are already current and all declared tools are present on `PATH`. Use
+`mise-en-place upgrade <skill> --force` to reinstall the current resolved
+version.
 
 ## Releases
 

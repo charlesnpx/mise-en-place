@@ -64,29 +64,43 @@ func installDelegated(name string, repo config.DelegatedRepo, opts Options) erro
 	if checkout.FallbackUsed {
 		fmt.Fprintf(os.Stderr, "warn: %s: no stable release tags found; using fallback ref %s\n", name, checkout.ResolvedRef)
 	}
-	installer, err := delegatedInstaller(checkout.Dir)
-	if err != nil {
-		return err
-	}
-	if _, err := runDelegatedInstaller(installer, name, "plan", target, false, ""); err != nil {
-		return err
-	}
-	stageRoot, err := os.MkdirTemp("", "mise-en-place-delegated-*")
-	if err != nil {
-		return err
-	}
-	if stageRoot, err = filepath.EvalSymlinks(stageRoot); err != nil {
-		return err
-	}
-	defer os.RemoveAll(stageRoot)
+	var staged *delegatedResult
+	var plan []fileOp
+	installOnlyDelegatedTools := target == "tools" && len(repo.Tools) > 0
+	if installOnlyDelegatedTools {
+		staged = &delegatedResult{
+			Schema:    1,
+			Name:      name,
+			Version:   delegatedProjectVersion(checkout.Dir, checkout.ResolvedRef),
+			Operation: "install",
+			Kind:      "delegated",
+			Targets:   map[string]delegatedTargetResult{},
+		}
+	} else {
+		installer, err := delegatedInstaller(checkout.Dir)
+		if err != nil {
+			return err
+		}
+		if _, err := runDelegatedInstaller(installer, name, "plan", target, false, ""); err != nil {
+			return err
+		}
+		stageRoot, err := os.MkdirTemp("", "mise-en-place-delegated-*")
+		if err != nil {
+			return err
+		}
+		if stageRoot, err = filepath.EvalSymlinks(stageRoot); err != nil {
+			return err
+		}
+		defer os.RemoveAll(stageRoot)
 
-	staged, err := runDelegatedInstaller(installer, name, "install", target, true, stageRoot)
-	if err != nil {
-		return err
-	}
-	plan, err := delegatedStagedPlan(staged, stageRoot)
-	if err != nil {
-		return err
+		staged, err = runDelegatedInstaller(installer, name, "install", target, true, stageRoot)
+		if err != nil {
+			return err
+		}
+		plan, err = delegatedStagedPlan(staged, stageRoot)
+		if err != nil {
+			return err
+		}
 	}
 
 	lock, err := state.Lock()
@@ -112,6 +126,14 @@ func installDelegated(name string, repo config.DelegatedRepo, opts Options) erro
 		return err
 	}
 
+	var tools []state.DelegatedTool
+	if delegatedPipxToolsRequested(target) {
+		tools, err = installDelegatedPipxTools(name, repo.Tools, checkout)
+		if err != nil {
+			return err
+		}
+	}
+
 	s.Skills[name] = state.Skill{
 		Kind:          "delegated",
 		Version:       staged.Version,
@@ -122,6 +144,7 @@ func installDelegated(name string, repo config.DelegatedRepo, opts Options) erro
 		Channel:       checkout.Channel,
 		FallbackRef:   checkout.FallbackRef,
 		Targets:       files,
+		Tools:         tools,
 		InstalledAt:   time.Now().UTC(),
 	}
 	if err := state.Save(s); err != nil {
@@ -131,12 +154,12 @@ func installDelegated(name string, repo config.DelegatedRepo, opts Options) erro
 		Op:      "install",
 		Skill:   name,
 		Version: staged.Version,
-		Targets: delegatedTargetNames(staged.Targets),
+		Targets: delegatedInstalledTargetNames(staged.Targets, tools),
 	})
 	for _, warning := range staged.Warnings {
 		fmt.Fprintf(os.Stderr, "warn: %s: %s\n", name, warning)
 	}
-	fmt.Printf("installed %s %s (%s delegated)\n", name, staged.Version, strings.Join(delegatedTargetNames(staged.Targets), ", "))
+	fmt.Printf("installed %s %s (%s delegated)\n", name, staged.Version, strings.Join(delegatedInstalledTargetNames(staged.Targets, tools), ", "))
 	if skipped > 0 {
 		fmt.Fprintf(os.Stderr, "partial install: skipped %d divergent file(s); skipped files were not recorded in state\n", skipped)
 	}
@@ -158,13 +181,25 @@ func upgradeDelegated(name string, repo config.DelegatedRepo, opts Options) erro
 	if checkout.FallbackUsed {
 		fmt.Fprintf(os.Stderr, "warn: %s: no stable release tags found; using fallback ref %s\n", name, checkout.ResolvedRef)
 	}
-	installer, err := delegatedInstaller(checkout.Dir)
-	if err != nil {
-		return err
-	}
-	planned, err := runDelegatedInstaller(installer, name, "plan", target, false, "")
-	if err != nil {
-		return err
+	var planned *delegatedResult
+	if target == "tools" && len(repo.Tools) > 0 {
+		planned = &delegatedResult{
+			Schema:    1,
+			Name:      name,
+			Version:   delegatedProjectVersion(checkout.Dir, checkout.ResolvedRef),
+			Operation: "plan",
+			Kind:      "delegated",
+			Targets:   map[string]delegatedTargetResult{},
+		}
+	} else {
+		installer, err := delegatedInstaller(checkout.Dir)
+		if err != nil {
+			return err
+		}
+		planned, err = runDelegatedInstaller(installer, name, "plan", target, false, "")
+		if err != nil {
+			return err
+		}
 	}
 	s, err := state.Load()
 	if err != nil {
@@ -177,7 +212,8 @@ func upgradeDelegated(name string, repo config.DelegatedRepo, opts Options) erro
 			current.Version == planned.Version &&
 			current.ConfiguredRef == checkout.ConfiguredRef &&
 			current.Channel == checkout.Channel &&
-			current.FallbackRef == checkout.FallbackRef {
+			current.FallbackRef == checkout.FallbackRef &&
+			delegatedPipxToolsCurrent(repo.Tools, current.Tools) {
 			fmt.Printf("%s already up to date (%s @ %s)\n", name, current.Version, current.Ref)
 			return nil
 		}
@@ -189,6 +225,7 @@ func upgradeDelegated(name string, repo config.DelegatedRepo, opts Options) erro
 }
 
 func uninstallDelegated(name string, sk state.Skill) error {
+	uninstallDelegatedPipxTools(name, sk.Tools)
 	if sk.Repo != "" && sk.Ref != "" {
 		repo := config.DelegatedRepo{Repo: sk.Repo, Ref: sk.Ref}
 		checkout, err := prepareDelegatedRepo(name, repo)
@@ -528,6 +565,21 @@ func delegatedTargetNames(targets map[string]delegatedTargetResult) []string {
 	for name := range targets {
 		names = append(names, name)
 	}
+	sort.Strings(names)
+	return names
+}
+
+func delegatedInstalledTargetNames(targets map[string]delegatedTargetResult, tools []state.DelegatedTool) []string {
+	names := delegatedTargetNames(targets)
+	if len(tools) == 0 {
+		return names
+	}
+	for _, name := range names {
+		if name == "tools" {
+			return names
+		}
+	}
+	names = append(names, "tools")
 	sort.Strings(names)
 	return names
 }

@@ -20,12 +20,22 @@ type Registry struct {
 // DelegatedRepo locates a polyrepo skill. Use Ref for exact pins, or Channel
 // for moving sources such as latest-release.
 type DelegatedRepo struct {
-	Repo        string `yaml:"repo"`
-	Ref         string `yaml:"ref"`
-	Channel     string `yaml:"channel"`      // latest-release
-	FallbackRef string `yaml:"fallback_ref"` // used by latest-release when no release tags exist
-	Visibility  string `yaml:"visibility"`   // public | private; defaults to public
-	Optional    bool   `yaml:"optional"`     // optional delegated repos are skipped by install --all unless --strict
+	Repo        string              `yaml:"repo"`
+	Ref         string              `yaml:"ref"`
+	Channel     string              `yaml:"channel"`      // latest-release
+	FallbackRef string              `yaml:"fallback_ref"` // used by latest-release when no release tags exist
+	Visibility  string              `yaml:"visibility"`   // public | private; defaults to public
+	Optional    bool                `yaml:"optional"`     // optional delegated repos are skipped by install --all unless --strict
+	Tools       []DelegatedToolSpec `yaml:"tools"`
+}
+
+// DelegatedToolSpec declares a CLI executable that belongs to a delegated repo
+// and should be installed from the resolved delegated checkout.
+type DelegatedToolSpec struct {
+	Executable  string `yaml:"executable"`
+	Manager     string `yaml:"manager"`      // currently only pipx
+	Package     string `yaml:"package"`      // pipx package name, used for uninstall
+	InstallFrom string `yaml:"install_from"` // checkout; defaults to checkout
 }
 
 // ExternalToolSpec declares a third-party executable used by one or more
@@ -100,6 +110,24 @@ func (r *Registry) Validate() error {
 		}
 		if d.Visibility != "" && d.Visibility != "public" && d.Visibility != "private" {
 			return fmt.Errorf("registry.yaml: delegated %s has invalid visibility %q (expected public or private)", name, d.Visibility)
+		}
+		for i, tool := range d.Tools {
+			label := fmt.Sprintf("registry.yaml: delegated %s tools[%d]", name, i)
+			if tool.Executable == "" {
+				return fmt.Errorf("%s missing executable", label)
+			}
+			if tool.Manager == "" {
+				return fmt.Errorf("%s missing manager", label)
+			}
+			if tool.Manager != "pipx" {
+				return fmt.Errorf("%s has invalid manager %q (expected pipx)", label, tool.Manager)
+			}
+			if tool.Package == "" {
+				return fmt.Errorf("%s missing package", label)
+			}
+			if tool.InstallFrom != "" && tool.InstallFrom != "checkout" {
+				return fmt.Errorf("%s has invalid install_from %q (expected checkout)", label, tool.InstallFrom)
+			}
 		}
 	}
 	for name, t := range r.ExternalTools {

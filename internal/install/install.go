@@ -727,7 +727,23 @@ func PrintList(w io.Writer, s *state.State, reg *config.Registry) {
 		for t := range sk.Targets {
 			targets = append(targets, t)
 		}
+		if len(sk.Tools) > 0 {
+			hasTools := false
+			for _, t := range targets {
+				if t == "tools" {
+					hasTools = true
+					break
+				}
+			}
+			if !hasTools {
+				targets = append(targets, "tools")
+			}
+		}
 		sort.Strings(targets)
+		targetText := strings.Join(targets, ",")
+		if targetText == "" {
+			targetText = "no files"
+		}
 		extra := ""
 		if sk.Kind == "delegated" {
 			extra = " [delegated]"
@@ -735,7 +751,7 @@ func PrintList(w io.Writer, s *state.State, reg *config.Registry) {
 		if sk.Adopted {
 			extra += " [adopted]"
 		}
-		fmt.Fprintf(w, "  %s %s (%s)%s\n", n, sk.Version, strings.Join(targets, ","), extra)
+		fmt.Fprintf(w, "  %s %s (%s)%s\n", n, sk.Version, targetText, extra)
 	}
 
 	fmt.Fprintln(w, "\nAvailable in registry:")
@@ -767,6 +783,9 @@ func PrintList(w io.Writer, s *state.State, reg *config.Registry) {
 		}
 		if d.Optional {
 			attrs = append(attrs, "optional")
+		}
+		if len(d.Tools) > 0 {
+			attrs = append(attrs, "pipx tools")
 		}
 		if reg.IsExperimental(n) {
 			attrs = append(attrs, "experimental")

@@ -41,6 +41,7 @@ type Skill struct {
 	Channel        string                  `json:"channel,omitempty"`
 	FallbackRef    string                  `json:"fallback_ref,omitempty"`
 	Targets        map[string]TargetRecord `json:"targets,omitempty"`
+	Tools          []DelegatedTool         `json:"tools,omitempty"`
 	Adopted        bool                    `json:"adopted,omitempty"`
 	InstalledAt    time.Time               `json:"installed_at"`
 }
@@ -54,6 +55,19 @@ type TargetRecord struct {
 type FileRecord struct {
 	Path   string `json:"path"`
 	SHA256 string `json:"sha256"`
+}
+
+// DelegatedTool records a CLI executable installed for a delegated repo by
+// mise-en-place.
+type DelegatedTool struct {
+	Executable    string    `json:"executable"`
+	Path          string    `json:"path"`
+	Manager       string    `json:"manager"`
+	Package       string    `json:"package"`
+	InstallSource string    `json:"install_source"`
+	Installed     bool      `json:"installed"`
+	InstalledAt   time.Time `json:"installed_at,omitempty"`
+	VerifiedAt    time.Time `json:"verified_at"`
 }
 
 // ExternalTool records a third-party executable verified or installed by
