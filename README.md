@@ -161,7 +161,8 @@ External tools are recorded in state after verification, but mise-en-place does
 not own or hash their files. `uninstall <tool>` forgets the state record and
 leaves the executable installed.
 
-Delegated repos may also declare tools that belong to that repo:
+Python package delegated repos may also declare pipx-managed tools that belong
+to that repo:
 
 ```yaml
 delegated:
@@ -184,6 +185,13 @@ pipx install --force ~/.cache/mise-en-place/repos/keyframe
 These tools are recorded under the delegated skill in state. Unlike global
 external tools, `uninstall <skill>` removes delegated pipx tools with
 `pipx uninstall <package>`.
+
+Go and other self-contained delegated CLIs should usually own their `tools`
+target from the delegated installer instead of using `registry.yaml tools:`.
+For example, `ado-query` and `convo-relay` stage files such as
+`~/.local/bin/<tool>` under `--install-root` and report them in the installer
+JSON `targets.tools.files` list. Those files are owned, hashed, upgraded, and
+removed through the normal delegated file flow.
 
 ## Setup and health
 
@@ -346,13 +354,22 @@ ownership, diff, backup, and state flow used for managed skills.
 Python package CLIs should not create `~/.local/bin` shims from their delegated
 installer. Declare the pipx tool in `registry.yaml` instead. Such installers
 should still accept `--target tools --json` and may return an empty tools target:
-`"tools": {"files": []}`.
+`"tools": {"files": []}`. Go and other self-contained CLIs may instead return
+real `tools` target files from the delegated installer, such as
+`~/.local/bin/ado-query` or `~/.local/bin/convo-relay`.
 
 For delegated upgrades, `mise-en-place` resolves the current source first and
 skips the reinstall when the installed version, resolved ref, and resolved
-commit are already current and all declared tools are present on `PATH`. Use
-`mise-en-place upgrade <skill> --force` to reinstall the current resolved
-version.
+commit are already current, all declared pipx tools are present on `PATH`, and
+all recorded installer-owned target files still exist with their recorded
+hashes. Use `mise-en-place upgrade <skill> --force` to reinstall the current
+resolved version.
+
+Delegated repos using `channel: latest-release` advance by publishing stable
+`vMAJOR.MINOR.PATCH` git tags. A repo that changes its packaging model should
+publish a new semver line that clearly supersedes older package metadata; for
+example, the Go `convo-relay` line starts at `v1.0.0` after the Python `0.4.0`
+line.
 
 ## Releases
 

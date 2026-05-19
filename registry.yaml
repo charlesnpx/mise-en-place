@@ -60,11 +60,6 @@ delegated:
     fallback_ref: main
     visibility: private
     optional: true
-    tools:
-      - executable: convo-relay
-        manager: pipx
-        package: convo-relay
-        install_from: checkout
   convo-porter:
     repo: github.com/charlesnpx/convo-porter
     channel: latest-release

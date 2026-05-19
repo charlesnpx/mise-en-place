@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charlesnpx/mise-en-place/internal/artifact"
 	"github.com/charlesnpx/mise-en-place/internal/config"
 	"github.com/charlesnpx/mise-en-place/internal/state"
 )
@@ -213,6 +214,7 @@ func upgradeDelegated(name string, repo config.DelegatedRepo, opts Options) erro
 			current.ConfiguredRef == checkout.ConfiguredRef &&
 			current.Channel == checkout.Channel &&
 			current.FallbackRef == checkout.FallbackRef &&
+			delegatedPlannedTargetsCurrent(planned.Targets, current.Targets) &&
 			delegatedPipxToolsCurrent(repo.Tools, current.Tools) {
 			fmt.Printf("%s already up to date (%s @ %s)\n", name, current.Version, current.Ref)
 			return nil
@@ -554,10 +556,51 @@ func delegatedPlan(result *delegatedResult) ([]fileOp, error) {
 	var plan []fileOp
 	for targetName, target := range result.Targets {
 		for _, file := range target.Files {
-			plan = append(plan, fileOp{target: targetName, dst: file.Path, sha256: file.SHA256})
+			plan = append(plan, fileOp{target: targetName, dst: canonicalDelegatedPath(file.Path), sha256: file.SHA256})
 		}
 	}
 	return plan, nil
+}
+
+func canonicalDelegatedPath(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved
+	}
+	dir := filepath.Dir(path)
+	if resolvedDir, err := filepath.EvalSymlinks(dir); err == nil {
+		return filepath.Join(resolvedDir, filepath.Base(path))
+	}
+	return path
+}
+
+func delegatedPlannedTargetsCurrent(planned map[string]delegatedTargetResult, current map[string]state.TargetRecord) bool {
+	for targetName, plannedTarget := range planned {
+		if len(plannedTarget.Files) == 0 {
+			continue
+		}
+		currentTarget, ok := current[targetName]
+		if !ok {
+			return false
+		}
+		byPath := map[string]state.FileRecord{}
+		for _, file := range currentTarget.Files {
+			byPath[canonicalDelegatedPath(file.Path)] = file
+		}
+		for _, plannedFile := range plannedTarget.Files {
+			record, ok := byPath[canonicalDelegatedPath(plannedFile.Path)]
+			if !ok {
+				return false
+			}
+			if plannedFile.SHA256 != "" && plannedFile.SHA256 != record.SHA256 {
+				return false
+			}
+			sum, err := artifact.SHA256File(record.Path)
+			if err != nil || sum != record.SHA256 {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func delegatedTargetNames(targets map[string]delegatedTargetResult) []string {
