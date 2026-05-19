@@ -904,6 +904,95 @@ fi
 	return repo
 }
 
+func writeDelegatedInstallerToolRepo(t *testing.T, root, name string) string {
+	t.Helper()
+	repo := filepath.Join(root, name+"-repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := `#!/bin/sh
+set -eu
+op=install
+target=all
+install_root="$HOME"
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --plan) op=plan ;;
+    --install) op=install ;;
+    --uninstall) op=uninstall ;;
+    --target) shift; target="$1" ;;
+    --install-root) shift; install_root="$1" ;;
+    --json) ;;
+  esac
+  shift
+done
+log="$HOME/installer.log"
+echo "$op:$target" >> "$log"
+codex_file="$install_root/.codex/skills/` + name + `/SKILL.md"
+tool_file="$install_root/.local/bin/` + name + `"
+include_codex=0
+include_tools=0
+case "$target" in
+  all|codex)
+    include_codex=1
+    include_tools=1
+    ;;
+  tools)
+    include_tools=1
+    ;;
+esac
+if [ "$op" = "install" ]; then
+  if [ "$include_codex" = "1" ]; then
+    mkdir -p "$(dirname "$codex_file")"
+    printf '# delegated ` + name + `\n' > "$codex_file"
+  fi
+  if [ "$include_tools" = "1" ]; then
+    mkdir -p "$(dirname "$tool_file")"
+    printf '#!/bin/sh\nprintf delegated-tool\n' > "$tool_file"
+    chmod 755 "$tool_file"
+  fi
+fi
+if [ "$op" = "uninstall" ]; then
+  rm -f "$codex_file" "$tool_file"
+fi
+codex_sha=""
+tool_sha=""
+if [ -f "$codex_file" ]; then
+  codex_sha=$(shasum -a 256 "$codex_file" | awk '{print $1}')
+fi
+if [ -f "$tool_file" ]; then
+  tool_sha=$(shasum -a 256 "$tool_file" | awk '{print $1}')
+fi
+printf '{"schema":1,"name":"` + name + `","version":"0.2.0","operation":"%s","kind":"delegated","capabilities":["query"],"setup":[{"kind":"env","env":"DELEGATED_TOKEN","value_class":"secret","required_for":["query"]}],"targets":{' "$op"
+sep=""
+if [ "$include_codex" = "1" ]; then
+  printf '%s"codex":{"files":[{"path":"%s"' "$sep" "$codex_file"
+  if [ "$op" = "install" ]; then
+    printf ',"sha256":"%s"' "$codex_sha"
+  fi
+  printf '}]}'
+  sep=","
+fi
+if [ "$include_tools" = "1" ]; then
+  printf '%s"tools":{"files":[{"path":"%s"' "$sep" "$tool_file"
+  if [ "$op" = "install" ]; then
+    printf ',"sha256":"%s"' "$tool_sha"
+  fi
+  printf '}]}'
+fi
+printf '},"warnings":[]}\n'
+`
+	if err := os.WriteFile(filepath.Join(repo, "install-skill.sh"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run(t, repo, "git", "init", "-b", "main")
+	run(t, repo, "git", "config", "user.email", "test@example.com")
+	run(t, repo, "git", "config", "user.name", "Test")
+	run(t, repo, "git", "add", ".")
+	run(t, repo, "git", "commit", "-m", "init")
+	return repo
+}
+
 func run(t *testing.T, dir string, name string, args ...string) {
 	t.Helper()
 	cmd := exec.Command(name, args...)
@@ -1019,6 +1108,109 @@ version = "0.7.0"
 	}
 	if len(sk.Targets) != 0 || len(sk.Tools) != 1 {
 		t.Fatalf("expected only delegated tool state, got targets=%+v tools=%+v", sk.Targets, sk.Tools)
+	}
+}
+
+func TestInstall_DelegatedInstallerOwnedToolTargetRunsInstaller(t *testing.T) {
+	home := withFakeHome(t)
+	repo := writeDelegatedInstallerToolRepo(t, home, "delegated")
+	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"delegated": {Repo: repo, Ref: "main"},
+	}}
+	if err := One("delegated", reg, Options{Target: "tools"}); err != nil {
+		t.Fatalf("install delegated tools: %v", err)
+	}
+	logBody, err := os.ReadFile(filepath.Join(home, "installer.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(logBody); got != "plan:tools\ninstall:tools\n" {
+		t.Fatalf("target tools should run delegated installer, got:\n%s", got)
+	}
+	s, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sk := s.Skills["delegated"]
+	if len(sk.Tools) != 0 {
+		t.Fatalf("installer-owned tool should not use pipx tool state: %+v", sk.Tools)
+	}
+	realHome, err := filepath.EvalSymlinks(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := sk.Targets["tools"].Files
+	if len(files) != 1 || files[0].Path != filepath.Join(realHome, ".local", "bin", "delegated") {
+		t.Fatalf("expected installer-owned tools target, got %+v", sk.Targets)
+	}
+}
+
+func TestInstall_DelegatedInstallerCanReturnToolsWithCodexTarget(t *testing.T) {
+	home := withFakeHome(t)
+	repo := writeDelegatedInstallerToolRepo(t, home, "delegated")
+	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"delegated": {Repo: repo, Ref: "main"},
+	}}
+	if err := One("delegated", reg, Options{Target: "codex"}); err != nil {
+		t.Fatalf("install delegated codex: %v", err)
+	}
+	s, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sk := s.Skills["delegated"]
+	if len(sk.Targets["codex"].Files) != 1 || len(sk.Targets["tools"].Files) != 1 {
+		t.Fatalf("expected codex and tools targets, got %+v", sk.Targets)
+	}
+}
+
+func TestUpgrade_DelegatedInstallerOwnedToolReinstallsWhenFileMissing(t *testing.T) {
+	home := withFakeHome(t)
+	repo := writeDelegatedInstallerToolRepo(t, home, "delegated")
+	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"delegated": {Repo: repo, Ref: "main"},
+	}}
+	if err := One("delegated", reg, Options{Target: "tools"}); err != nil {
+		t.Fatalf("install delegated tools: %v", err)
+	}
+	if err := os.Remove(filepath.Join(home, ".local", "bin", "delegated")); err != nil {
+		t.Fatal(err)
+	}
+	if err := Upgrade("delegated", reg, Options{Target: "tools"}); err != nil {
+		t.Fatalf("upgrade delegated tools: %v", err)
+	}
+	logBody, err := os.ReadFile(filepath.Join(home, "installer.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(logBody), "install:tools"); got != 2 {
+		t.Fatalf("expected upgrade to reinstall missing installer-owned tool, got %d installs:\n%s", got, logBody)
+	}
+}
+
+func TestDoctor_DelegatedInstallerOwnedToolUsesContractAndState(t *testing.T) {
+	home := withFakeHome(t)
+	repo := writeDelegatedInstallerToolRepo(t, home, "delegated")
+	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"delegated": {Repo: repo, Ref: "main"},
+	}}
+	if err := One("delegated", reg, Options{Target: "tools"}); err != nil {
+		t.Fatalf("install delegated tools: %v", err)
+	}
+	var out bytes.Buffer
+	if err := Doctor(&out, reg, Options{Target: "tools"}); err != nil {
+		t.Fatalf("doctor delegated tools: %v\n%s", err, out.String())
+	}
+	if strings.Contains(out.String(), "pipx") {
+		t.Fatalf("installer-owned tools should not emit pipx guidance:\n%s", out.String())
+	}
+	if err := os.Remove(filepath.Join(home, ".local", "bin", "delegated")); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	err := Doctor(&out, reg, Options{Target: "tools"})
+	if err == nil || !strings.Contains(out.String(), "tools target missing") {
+		t.Fatalf("expected missing installer-owned tool error, err=%v out=\n%s", err, out.String())
 	}
 }
 
