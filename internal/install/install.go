@@ -428,6 +428,8 @@ type fileOp struct {
 	sha256 string
 }
 
+const payloadColonEscape = "__colon__"
+
 func buildPlan(skillDir string, m *config.SkillManifest, requested map[string]*config.Target) ([]fileOp, error) {
 	var ops []fileOp
 	for tname, t := range requested {
@@ -466,6 +468,7 @@ func buildPlan(skillDir string, m *config.SkillManifest, requested map[string]*c
 				if err != nil {
 					return err
 				}
+				dstRel := decodePayloadRelPath(rel)
 				sum, err := artifact.SHA256File(path)
 				if err != nil {
 					return err
@@ -473,7 +476,7 @@ func buildPlan(skillDir string, m *config.SkillManifest, requested map[string]*c
 				ops = append(ops, fileOp{
 					target: tname,
 					src:    path,
-					dst:    filepath.Join(dst, rel),
+					dst:    filepath.Join(dst, dstRel),
 					sha256: sum,
 				})
 				return nil
@@ -484,6 +487,14 @@ func buildPlan(skillDir string, m *config.SkillManifest, requested map[string]*c
 		}
 	}
 	return ops, nil
+}
+
+func decodePayloadRelPath(rel string) string {
+	parts := strings.Split(rel, string(filepath.Separator))
+	for i, part := range parts {
+		parts[i] = strings.ReplaceAll(part, payloadColonEscape, ":")
+	}
+	return filepath.Join(parts...)
 }
 
 func checkCollisions(s *state.State, self string, plan []fileOp) error {

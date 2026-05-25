@@ -193,6 +193,44 @@ func TestInstall_Managed_DualTarget(t *testing.T) {
 	}
 }
 
+func TestBuildPlan_DecodesColonEscapedSkillDirPaths(t *testing.T) {
+	home := withFakeHome(t)
+	skillDir := filepath.Join(home, "skills", "pr")
+	srcDir := filepath.Join(skillDir, "codex", "pr__colon__review__colon__no-file")
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "SKILL.md"), []byte("# review\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	manifest := &config.SkillManifest{
+		Name: "pr",
+		Targets: map[string]*config.Target{
+			"codex": {
+				Type:      config.TargetSkillDir,
+				Payload:   "codex",
+				InstallTo: filepath.Join(home, ".codex", "skills"),
+			},
+		},
+	}
+	requested := map[string]*config.Target{
+		"codex": manifest.Targets["codex"],
+	}
+
+	plan, err := buildPlan(skillDir, manifest, requested)
+	if err != nil {
+		t.Fatalf("buildPlan: %v", err)
+	}
+	if len(plan) != 1 {
+		t.Fatalf("expected one file op, got %d: %+v", len(plan), plan)
+	}
+	want := filepath.Join(home, ".codex", "skills", "pr:review:no-file", "SKILL.md")
+	if plan[0].dst != want {
+		t.Fatalf("dst = %q, want %q", plan[0].dst, want)
+	}
+}
+
 func TestInstall_RenamedManagedSkillMigratesOldState(t *testing.T) {
 	home := withFakeHome(t)
 	skillsRoot := filepath.Join(home, "skills")
