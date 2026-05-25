@@ -95,6 +95,16 @@ git diff <current-parent>..<branch> -- | sha256sum             # content hash of
 
 Save all three values per branch — you will compare against them after each rebase.
 
+Also identify the actual incremental change the branch contributes over the branch it targets. For each branch, inspect the commits and diff relative to its current parent:
+
+```bash
+git log --oneline <current-parent>..<branch>
+git diff --name-status <current-parent>..<branch>
+git diff <current-parent>..<branch> --
+```
+
+Write a short contribution note for each branch: what this branch is actually adding, changing, or removing, and which files carry that work. Use this note as context during the rebase to decide which changes matter, especially when resolving conflicts or interpreting backup diffs. The goal is to preserve the branch's own contribution while allowing already-rebased parent changes to propagate upward.
+
 ## Propagation Procedure
 
 ### Step 3: Rebase each branch, one at a time, walking up the chain

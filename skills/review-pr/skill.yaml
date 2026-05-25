@@ -1,5 +1,5 @@
 name: review-pr
-version: 0.1.1
+version: 0.2.0
 manifest_schema: 1
 min_installer: "0.1.0"
 capabilities:
@@ -8,11 +8,11 @@ targets:
   claude:
     type: skill_dir
     payload: claude
-    install_to: ~/.claude/skills/review-pr
+    install_to: ~/.claude/skills
   codex:
     type: skill_dir
     payload: codex
-    install_to: ~/.codex/skills/review-pr
+    install_to: ~/.codex/skills
 setup:
   - kind: executable
     executable: gh
