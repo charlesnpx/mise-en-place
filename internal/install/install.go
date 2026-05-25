@@ -59,16 +59,23 @@ func (o Options) skillsRoot() string {
 
 // One installs a single skill.
 func One(name string, reg *config.Registry, opts Options) error {
+	name = reg.CanonicalName(name)
 	kind := reg.Kind(name)
 	if kind == "" {
 		return fmt.Errorf("unknown skill: %s (not in registry.yaml)", name)
 	}
 	warnExperimental(name, reg)
 	if kind == "delegated" {
+		if err := cleanupRenamedSkills(name, reg); err != nil {
+			return err
+		}
 		return installDelegated(name, reg.Delegated[name], opts)
 	}
 	if kind == "external_tool" {
 		return installExternalTool(name, reg.ExternalTools[name], opts)
+	}
+	if err := cleanupRenamedSkills(name, reg); err != nil {
+		return err
 	}
 	return installManaged(name, opts)
 }
@@ -83,6 +90,10 @@ func All(reg *config.Registry, opts Options) error {
 			continue
 		}
 		warnExperimental(name, reg)
+		if err := cleanupRenamedSkills(name, reg); err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", name, err))
+			continue
+		}
 		if err := installManaged(name, opts); err != nil {
 			errs = append(errs, fmt.Sprintf("%s: %v", name, err))
 		}
@@ -98,6 +109,10 @@ func All(reg *config.Registry, opts Options) error {
 			continue
 		}
 		warnExperimental(name, reg)
+		if err := cleanupRenamedSkills(name, reg); err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", name, err))
+			continue
+		}
 		d := reg.Delegated[name]
 		err := installDelegated(name, d, opts)
 		if err == nil {
@@ -149,6 +164,7 @@ func warnExperimental(name string, reg *config.Registry) {
 
 // Upgrade reinstalls a single skill at the current source version.
 func Upgrade(name string, reg *config.Registry, opts Options) error {
+	name = reg.CanonicalName(name)
 	if reg.Kind(name) == "external_tool" {
 		return installExternalTool(name, reg.ExternalTools[name], opts)
 	}
@@ -168,7 +184,13 @@ func UpgradeAll(reg *config.Registry, opts Options) error {
 		return err
 	}
 	var errs []string
+	seen := map[string]bool{}
 	for name := range s.Skills {
+		name = reg.CanonicalName(name)
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
 		if reg.Kind(name) == "" {
 			continue
 		}
@@ -191,6 +213,15 @@ func UpgradeAll(reg *config.Registry, opts Options) error {
 }
 
 var errNotInstalled = errors.New("skill is not installed")
+
+func cleanupRenamedSkills(canonicalName string, reg *config.Registry) error {
+	for _, oldName := range reg.RenameSources(canonicalName) {
+		if err := Uninstall(oldName); err != nil && !errors.Is(err, errNotInstalled) {
+			return fmt.Errorf("migrate renamed skill %s -> %s: %w", oldName, canonicalName, err)
+		}
+	}
+	return nil
+}
 
 // Uninstall removes an installed skill from disk and state.
 func Uninstall(name string) error {
@@ -751,18 +782,24 @@ func PrintList(w io.Writer, s *state.State, reg *config.Registry) {
 		if sk.Adopted {
 			extra += " [adopted]"
 		}
+		if canonical := reg.CanonicalName(n); canonical != n {
+			extra += " [renamed to " + canonical + "]"
+		}
 		fmt.Fprintf(w, "  %s %s (%s)%s\n", n, sk.Version, targetText, extra)
 	}
 
 	fmt.Fprintln(w, "\nAvailable in registry:")
 	for _, n := range reg.Managed {
 		marker := "  "
-		if _, ok := s.Skills[n]; ok {
+		if installedAs(s, reg, n) {
 			marker = "✓ "
 		}
 		attrs := []string{"managed"}
 		if reg.IsExperimental(n) {
 			attrs = append(attrs, "experimental")
+		}
+		if sources := reg.RenameSources(n); len(sources) > 0 {
+			attrs = append(attrs, "replaces "+strings.Join(sources, ", "))
 		}
 		fmt.Fprintf(w, "%s%s (%s)\n", marker, n, strings.Join(attrs, ", "))
 	}
@@ -773,7 +810,7 @@ func PrintList(w io.Writer, s *state.State, reg *config.Registry) {
 	sort.Strings(dnames)
 	for _, n := range dnames {
 		marker := "  "
-		if _, ok := s.Skills[n]; ok {
+		if installedAs(s, reg, n) {
 			marker = "✓ "
 		}
 		d := reg.Delegated[n]
@@ -833,4 +870,16 @@ func PrintList(w io.Writer, s *state.State, reg *config.Registry) {
 		}
 		fmt.Fprintf(w, "%s%s (%s)%s\n", marker, n, strings.Join(attrs, ", "), path)
 	}
+}
+
+func installedAs(s *state.State, reg *config.Registry, canonicalName string) bool {
+	if _, ok := s.Skills[canonicalName]; ok {
+		return true
+	}
+	for _, oldName := range reg.RenameSources(canonicalName) {
+		if _, ok := s.Skills[oldName]; ok {
+			return true
+		}
+	}
+	return false
 }

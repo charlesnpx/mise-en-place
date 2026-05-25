@@ -13,8 +13,11 @@ managed:
   - gemini-vision
   - visual-qa
   - rebase-up
-  - review-pr
+  - pr
   - azure-static-site
+
+renames:
+  review-pr: pr
 
 delegated:
   ado-query:

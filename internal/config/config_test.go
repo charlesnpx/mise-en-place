@@ -111,7 +111,9 @@ func TestLoadRegistry_Valid(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`
 managed:
   - humanizer
-  - review-pr
+  - pr
+renames:
+  review-pr: pr
 delegated:
   keyframe:
     repo: github.com/charlesnpx/keyframe
@@ -152,6 +154,12 @@ external_tools:
 	}
 	if r.Kind("humanizer") != "managed" {
 		t.Errorf("humanizer kind: %s", r.Kind("humanizer"))
+	}
+	if r.Kind("review-pr") != "managed" || r.CanonicalName("review-pr") != "pr" {
+		t.Errorf("review-pr rename not resolved: kind=%s canonical=%s", r.Kind("review-pr"), r.CanonicalName("review-pr"))
+	}
+	if got := r.RenameSources("pr"); len(got) != 1 || got[0] != "review-pr" {
+		t.Errorf("rename sources: %v", got)
 	}
 	if r.Kind("keyframe") != "delegated" {
 		t.Errorf("keyframe kind: %s", r.Kind("keyframe"))
@@ -221,6 +229,35 @@ managed:
 experimental:
   - tool
   - tool
+`,
+		"rename source still declared": `
+managed:
+  - pr
+  - review-pr
+renames:
+  review-pr: pr
+`,
+		"rename unknown target": `
+managed:
+  - pr
+renames:
+  review-pr: missing
+`,
+		"rename external tool target": `
+external_tools:
+  markitdown:
+    executable: markitdown
+    manager: pipx
+    package: markitdown
+renames:
+  old-markitdown: markitdown
+`,
+		"rename chain": `
+managed:
+  - pr
+renames:
+  old-review-pr: review-pr
+  review-pr: pr
 `,
 	}
 	for name, body := range cases {

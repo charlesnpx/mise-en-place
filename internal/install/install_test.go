@@ -193,6 +193,60 @@ func TestInstall_Managed_DualTarget(t *testing.T) {
 	}
 }
 
+func TestInstall_RenamedManagedSkillMigratesOldState(t *testing.T) {
+	home := withFakeHome(t)
+	skillsRoot := filepath.Join(home, "skills")
+	oldClaudePath := filepath.Join(home, ".claude", "commands", "review-pr.md")
+	oldCodexDir := filepath.Join(home, ".codex", "skills", "review-pr/")
+	newClaudePath := filepath.Join(home, ".claude", "commands", "pr-review.md")
+	newCodexDir := filepath.Join(home, ".codex", "skills", "pr:review/")
+	writeFixtureSkill(t, skillsRoot, "review-pr", oldClaudePath, oldCodexDir)
+	writeFixtureSkill(t, skillsRoot, "pr", newClaudePath, newCodexDir)
+
+	oldReg := &config.Registry{Managed: []string{"review-pr"}}
+	opts := Options{
+		Target:           "all",
+		RunningInstaller: "0.1.0",
+		ManifestSchema:   1,
+		SkillsRoot:       skillsRoot,
+	}
+	if err := One("review-pr", oldReg, opts); err != nil {
+		t.Fatalf("install old skill: %v", err)
+	}
+
+	newReg := &config.Registry{
+		Managed: []string{"pr"},
+		Renames: map[string]string{"review-pr": "pr"},
+	}
+	if err := One("review-pr", newReg, opts); err != nil {
+		t.Fatalf("install renamed skill through old name: %v", err)
+	}
+
+	if _, err := os.Stat(oldClaudePath); !os.IsNotExist(err) {
+		t.Fatalf("old claude file should be removed, stat err: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(oldCodexDir, "SKILL.md")); !os.IsNotExist(err) {
+		t.Fatalf("old codex file should be removed, stat err: %v", err)
+	}
+	if _, err := os.Stat(newClaudePath); err != nil {
+		t.Fatalf("new claude file missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(newCodexDir, "SKILL.md")); err != nil {
+		t.Fatalf("new codex file missing: %v", err)
+	}
+
+	s, err := state.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := s.Skills["review-pr"]; ok {
+		t.Fatalf("old skill should not remain in state: %+v", s.Skills)
+	}
+	if _, ok := s.Skills["pr"]; !ok {
+		t.Fatalf("new skill should be recorded in state: %+v", s.Skills)
+	}
+}
+
 func TestInstallAll_SkipsExperimentalUnlessIncluded(t *testing.T) {
 	home := withFakeHome(t)
 	skillsRoot := filepath.Join(home, "skills")
@@ -778,6 +832,26 @@ func TestSetup_ManagedEnvMissing(t *testing.T) {
 	}
 	if !strings.Contains(outcome.Results[0].Remediation, "FIXTURE_TOKEN") {
 		t.Fatalf("missing remediation: %+v", outcome.Results[0])
+	}
+}
+
+func TestSetup_RenamedSkillUsesCanonicalManifest(t *testing.T) {
+	home := withFakeHome(t)
+	skillsRoot := filepath.Join(home, "skills")
+	writeSetupFixtureSkill(t, skillsRoot, "pr", "PR_TOKEN", []string{"query"})
+
+	reg := &config.Registry{
+		Managed: []string{"pr"},
+		Renames: map[string]string{"review-pr": "pr"},
+	}
+	outcome := EvaluateSetup(reg, Options{Target: "codex", SkillsRoot: skillsRoot}, SetupOptions{
+		Skill: "review-pr",
+	})
+	if outcome.Kind != SetupIncomplete {
+		t.Fatalf("kind = %s, want %s: %+v", outcome.Kind, SetupIncomplete, outcome)
+	}
+	if len(outcome.Results) != 1 || len(outcome.Results[0].Origins) != 1 || outcome.Results[0].Origins[0].Skill != "pr" {
+		t.Fatalf("expected canonical pr origin, got %+v", outcome.Results)
 	}
 }
 

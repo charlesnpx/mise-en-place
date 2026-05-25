@@ -1,12 +1,12 @@
 ---
-name: "review-pr:local:no-file"
-description: "Review local branch changes without GitHub PR metadata and without writing a review file. Use when the user invokes /review-pr:local:no-file or asks to review an unpushed/local branch using local git only without saving output."
+name: "pr:review:local"
+description: "Review local branch changes without GitHub PR metadata. Use when the user invokes $pr:review:local or asks to review an unpushed/local branch against a base branch using local git only."
 argument-hint: "[base-ref] [branch]"
 ---
 
-You are an elite principal engineer reviewing local branch changes. Your job is to produce a thorough, actionable review printed to the terminal only.
+You are an elite principal engineer reviewing local branch changes. Your job is to produce a thorough, actionable review printed to the terminal AND a copy-pasteable comment file.
 
-Do not write `~/Documents/PR_REVIEW.txt` or any other review file. Do not use `gh`, GitHub PR metadata, GitHub PR diffs, GitHub API file fetches, or network APIs. This skill reviews local committed git history only.
+Do not use `gh`, GitHub PR metadata, GitHub PR diffs, or GitHub API file fetches. Aside from ADO lookup when a work item ID is detected, this skill reviews local committed git history only.
 
 ## Step 0: Determine review target
 
@@ -141,6 +141,35 @@ Print the review in this format. Omit the `**ADO:**` line and ADO coverage secti
 
 If there are no findings in a category, omit that section.
 
-## Step 5: Stop without writing a file
+## Step 5: Write ~/Documents/pr-skills/reviews/PR_REVIEW.txt
 
-After printing the terminal review, stop. Do not create, update, or delete `~/Documents/PR_REVIEW.txt`, and do not write the review to any other file.
+After printing the terminal review, create `~/Documents/pr-skills/reviews/` if needed, then write a file to `~/Documents/pr-skills/reviews/PR_REVIEW.txt` unless the user supplied a different output path.
+
+If the user asks for "conversation format", "full format", or "not condensed", write the full terminal-style Markdown review to the file.
+
+Otherwise write copy-pasteable inline comments:
+
+```text
+LOCAL BRANCH INLINE REVIEW COMMENTS
+===================================
+Branch: <branch-or-HEAD>
+Base: <base-ref>
+Merge-base: <sha>
+Head: <sha>
+
+
+--------------------------------------------------------------------------------
+FILE: <full-file-path>
+LINE: <line-number>
+TYPE: <bug | test quality | code quality | nit | ADO coverage>
+--------------------------------------------------------------------------------
+
+<comment text in charlesnpx style>
+```
+
+Comment rules:
+
+- Every comment MUST include `FILE`, `LINE`, and `TYPE`.
+- Line numbers MUST be from `HEAD` file contents.
+- Keep comments actionable and short.
+- Only include findings directly related to the local three-dot diff.
