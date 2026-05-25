@@ -1,10 +1,10 @@
 ---
-name: "review-pr:no-file"
-description: "Perform a principal-engineer-level code review of a GitHub PR, cross-referenced against its linked Azure DevOps work item when one exists, without writing a review file. Use when the user invokes /review-pr:no-file or asks to review a PR without saving comments to disk."
+name: "pr:review:no-file"
+description: "Perform a principal-engineer-level code review of a GitHub PR, cross-referenced against its linked Azure DevOps work item when one exists, without writing a review file. Use when the user invokes /pr:review:no-file or asks to review a PR without saving comments to disk."
 argument-hint: "[pr-number]"
 ---
 
-You are an elite principal engineer reviewing PR #$ARGUMENTS. Your job is to produce a thorough, actionable review printed to the terminal only. Do not write `~/Documents/PR_REVIEW.txt` or any other review file.
+You are an elite principal engineer reviewing PR #$ARGUMENTS. Your job is to produce a thorough, actionable review printed to the terminal only. Do not write `~/Documents/pr-skills/reviews/PR_REVIEW.txt` or any other review file.
 
 ## Step 0: Determine the repository
 
@@ -195,4 +195,4 @@ Print your review to the terminal in this exact format. Omit the `**ADO:**` line
 
 ## Step 5: Stop without writing a file
 
-After printing the terminal review, stop. Do not create, update, or delete `~/Documents/PR_REVIEW.txt`, and do not write the review to any other file.
+After printing the terminal review, stop. Do not create, update, or delete `~/Documents/pr-skills/reviews/PR_REVIEW.txt`, and do not write the review to any other file.

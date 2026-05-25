@@ -57,6 +57,8 @@ point at another registry/skills tree while testing local changes.
 - **Managed skills** live in this repo under `skills/<name>/` with a
   `skill.yaml` manifest and per-target payloads. They are released via
   per-skill semver git tags (`<skill>/<version>`).
+- **Skill renames** are declared in `registry.yaml` under `renames:` so old
+  install/upgrade names resolve to the current managed or delegated skill.
 - **Delegated skills** live in their own repos (e.g. `keyframe`, `browse`) and
   are declared in `registry.yaml` with either an exact `ref` pin or
   `channel: latest-release`. The latest-release channel resolves the highest

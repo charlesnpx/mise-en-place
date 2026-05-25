@@ -1,5 +1,5 @@
 ---
-name: review-pr
+name: "pr:review"
 description: "Perform a principal-engineer-level code review of a GitHub PR, cross-referenced against its linked Azure DevOps work item when one exists. Use when the user asks to review a PR."
 argument-hint: "[pr-number]"
 ---
@@ -193,9 +193,9 @@ Print your review to the terminal in this exact format. Omit the `**ADO:**` line
 - Keep explanations concise — lead with what's wrong, not background context
 - Do NOT suggest improvements that aren't directly related to the PR's changes (don't review untouched code)
 
-## Step 5: Write ~/Documents/PR_REVIEW.txt
+## Step 5: Write ~/Documents/pr-skills/reviews/PR_REVIEW.txt
 
-After printing the terminal review, write a file to `~/Documents/PR_REVIEW.txt` containing copy-pasteable inline comments for the PR. Each comment should be ready to paste directly into GitHub's review UI.
+After printing the terminal review, create `~/Documents/pr-skills/reviews/` if needed, then write a file to `~/Documents/pr-skills/reviews/PR_REVIEW.txt` containing copy-pasteable inline comments for the PR. Each comment should be ready to paste directly into GitHub's review UI.
 
 ### Comment style guide
 
@@ -279,6 +279,6 @@ TYPE: <bug | test quality | code quality | nit | ADO coverage>
 ### Rules for the comment file:
 - Every comment MUST include a `TYPE:` line identifying the finding type: `bug`, `test quality`, `code quality`, `nit`, or `ADO coverage`.
 - Line numbers MUST be from the PR branch file (fetched via GitHub API), not diff hunk offsets.
-- Run /humanizer on each comment before writing it. Strip any remaining AI patterns.
+- Run $humanizer on each comment before writing it. Strip any remaining AI patterns.
 - Every comment must pass this test: "would a senior dev dash this off in 30 seconds during a code review?" If it sounds like a paragraph from a blog post, rewrite it shorter.
 - Only include findings that are actionable. Drop anything that's just informational noise.

@@ -119,6 +119,7 @@ func RunHealth(w io.Writer, reg *config.Registry, opts Options, setupOpts SetupO
 }
 
 func EvaluateSetup(reg *config.Registry, opts Options, setupOpts SetupOptions) SetupOutcome {
+	setupOpts.Skill = reg.CanonicalName(setupOpts.Skill)
 	if setupOpts.Capability != "" && !validCapability(setupOpts.Capability) {
 		return SetupOutcome{Kind: SetupMisuse, Errors: []string{fmt.Sprintf("unknown capability %q", setupOpts.Capability)}}
 	}
@@ -165,6 +166,7 @@ func setupRegistrations(reg *config.Registry, opts Options, setupOpts SetupOptio
 		}
 		for name := range s.Skills {
 			installed[name] = true
+			installed[reg.CanonicalName(name)] = true
 		}
 	}
 

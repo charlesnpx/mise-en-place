@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 
 	"gopkg.in/yaml.v3"
 )
@@ -12,6 +13,7 @@ import (
 // delegated repos, and external tools used by those skills.
 type Registry struct {
 	Managed       []string                    `yaml:"managed"`
+	Renames       map[string]string           `yaml:"renames"`
 	Delegated     map[string]DelegatedRepo    `yaml:"delegated"`
 	Experimental  []string                    `yaml:"experimental"`
 	ExternalTools map[string]ExternalToolSpec `yaml:"external_tools"`
@@ -148,6 +150,30 @@ func (r *Registry) Validate() error {
 			return fmt.Errorf("registry.yaml: external tool %s missing package", name)
 		}
 	}
+	for oldName, newName := range r.Renames {
+		if oldName == "" {
+			return errors.New("registry.yaml: rename has empty source name")
+		}
+		if newName == "" {
+			return fmt.Errorf("registry.yaml: rename %s has empty target name", oldName)
+		}
+		if oldName == newName {
+			return fmt.Errorf("registry.yaml: rename %s points to itself", oldName)
+		}
+		if owner := seen[oldName]; owner != "" {
+			return fmt.Errorf("registry.yaml: rename source %s is still declared as %s", oldName, owner)
+		}
+		owner := seen[newName]
+		if owner == "" {
+			return fmt.Errorf("registry.yaml: rename %s targets unknown skill %s", oldName, newName)
+		}
+		if owner == "external tool" {
+			return fmt.Errorf("registry.yaml: rename %s targets external tool %s", oldName, newName)
+		}
+		if _, chained := r.Renames[newName]; chained {
+			return fmt.Errorf("registry.yaml: rename %s targets renamed skill %s; renames must point directly at the canonical skill", oldName, newName)
+		}
+	}
 	experimentalSeen := map[string]bool{}
 	for _, name := range r.Experimental {
 		if experimentalSeen[name] {
@@ -178,6 +204,7 @@ func (r *Registry) AllSkills() []string {
 // Kind reports whether a registry entry is managed, delegated, external_tool,
 // or unknown.
 func (r *Registry) Kind(name string) string {
+	name = r.CanonicalName(name)
 	for _, m := range r.Managed {
 		if m == name {
 			return "managed"
@@ -195,10 +222,42 @@ func (r *Registry) Kind(name string) string {
 // IsExperimental reports whether a managed or delegated skill is excluded from
 // the default install set and requires explicit opt-in.
 func (r *Registry) IsExperimental(name string) bool {
+	name = r.CanonicalName(name)
 	for _, experimental := range r.Experimental {
 		if experimental == name {
 			return true
 		}
 	}
 	return false
+}
+
+// CanonicalName returns the current registry name for a possibly-renamed skill.
+func (r *Registry) CanonicalName(name string) string {
+	if r == nil || name == "" {
+		return name
+	}
+	seen := map[string]bool{}
+	for {
+		next := r.Renames[name]
+		if next == "" || seen[name] {
+			return name
+		}
+		seen[name] = true
+		name = next
+	}
+}
+
+// RenameSources returns old names that now resolve to canonicalName.
+func (r *Registry) RenameSources(canonicalName string) []string {
+	if r == nil {
+		return nil
+	}
+	var out []string
+	for oldName, newName := range r.Renames {
+		if r.CanonicalName(newName) == canonicalName {
+			out = append(out, oldName)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
