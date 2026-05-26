@@ -116,13 +116,14 @@ If exactly one ID is found, use the available ADO query flow to fetch title, des
 The description should be useful to a future reviewer and maintainer. Include:
 
 - what changed in this branch, scoped only to `<merge-base>...<branch>`
-- why this approach was taken
-- meaningful alternatives considered and rejected, only when they help review or future maintenance
+- our reasoning for concluding this was the correct approach
+- meaningful things considered but not done, only when they help explain a design choice, boundary, tradeoff, or future maintenance concern
 - test/verification notes based on commits, diff, and user-provided context
 - stack context when this branch is based on another stack branch
 - ADO context when available and relevant
+- any other useful information that might help a future reviewer or maintainer understand, modify, debug, or extend the work
 
-Do not pad the description with process notes. Be conservative about including "things considered but not done"; include them only when they explain a design choice, a boundary, or a future maintenance concern.
+Do not pad the description with process notes. Be conservative about whether "things considered but not done" or extra background is useful; include them only when they help review or future maintenance.
 
 Before saving, run `$humanizer` on the drafted PR description and apply the rewrite if it preserves the technical meaning.
 
