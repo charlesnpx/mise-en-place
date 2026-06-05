@@ -15,12 +15,13 @@ Use Azure Static Web Apps for Cloudflare Pages-like static hosting in a Microsof
 4. Do not store the deployment token. Fetch it at deploy time with `az staticwebapp secrets list`.
 5. Require `AZURE_STATIC_SITE_RESOURCE_GROUP` to name the approved Azure resource group. Do not infer, choose, or fall back to any other resource group.
 6. For updates, reuse the existing ref file or pass `--name`; the ref file resource group must match `AZURE_STATIC_SITE_RESOURCE_GROUP`.
+7. Deployments are company-only by default using single-tenant Microsoft Entra auth. Pass `--public` only when public anonymous access is explicitly requested.
 
 If the user provides inline HTML, asks for a simple generated page, or does not care where the source lives, create a durable generated-site folder under `~/.cache/static-site/<ref>/`, write `index.html` into it, and deploy that folder. Keep `.azure-static-site.json` beside `index.html` so the same Azure Static Web App can be updated later. Use a project folder instead only when the user explicitly wants the source in the current repo or another named location.
 
 ## Helper Script
 
-Deploy a new public site:
+Deploy a new company-only site:
 
 ```bash
 export AZURE_STATIC_SITE_RESOURCE_GROUP="<approved-resource-group>"
@@ -73,9 +74,17 @@ python3 ~/.codex/skills/azure-static-site/scripts/deploy_azure_static_site.py \
   --location eastus2
 ```
 
+Deploy a public site only when explicitly requested:
+
+```bash
+python3 ~/.codex/skills/azure-static-site/scripts/deploy_azure_static_site.py \
+  --dir /path/to/site \
+  --public
+```
+
 Only deploy to the resource group in `AZURE_STATIC_SITE_RESOURCE_GROUP`. The helper refuses `--resource-group`, refuses to create resource groups, and refuses to deploy when an existing `.azure-static-site.json` names a different resource group. If Azure returns `Forbidden` while checking the configured resource group, stop and report that the account lacks the required Azure permission. Do not infer a fallback from other visible resource groups, and do not deploy to an unrelated resource group just because the account can see or access it.
 
-Restrict access to the user's company Entra tenant:
+The `--company-auth` flag is accepted for compatibility but is no longer required:
 
 ```bash
 python3 ~/.codex/skills/azure-static-site/scripts/deploy_azure_static_site.py \
@@ -87,8 +96,10 @@ The helper creates or updates:
 
 - an Azure Static Web App
 - a `.azure-static-site.json` reference file
-- a `staticwebapp.config.json` auth file when `--company-auth` is used and no config exists
-- a single-tenant Microsoft Entra app registration when `--company-auth` is used and the ref file does not already contain one
+- a `staticwebapp.config.json` auth file by default when no config exists
+- a single-tenant Microsoft Entra app registration by default when the ref file does not already contain one
+
+When `--public` is used, the helper skips auth file and app registration creation. It does not remove an existing `staticwebapp.config.json`; inspect the site folder if changing an existing protected site to public access.
 
 ## Reference File
 
@@ -101,7 +112,7 @@ The ref file is the stable update handle. Keep it with the source folder when po
   "resourceGroup": "<approved-resource-group>",
   "name": "my-static-site",
   "location": "eastus2",
-  "sku": "Free",
+  "sku": "Standard",
   "subscriptionId": "...",
   "tenantId": "...",
   "defaultHostname": "...azurestaticapps.net",
@@ -114,14 +125,14 @@ To update the same hosted app later, run the helper from the same folder or pass
 
 ## Company-Only Visibility
 
-Use `--company-auth` when the user asks for same-company, organization-only, Microsoft tenant-only, Entra-only, or internal visibility.
+Company-only visibility is the default. Use it when the user asks for same-company, organization-only, Microsoft tenant-only, Entra-only, or internal visibility. Use `--public` only when the user explicitly asks for anonymous public access.
 
 Important details:
 
 - `allowedRoles: ["authenticated"]` only means "logged in".
 - The built-in/preconfigured auth provider is not enough for tenant-only access.
 - Use a custom Microsoft Entra ID provider with a single-tenant app registration (`signInAudience=AzureADMyOrg`).
-- Use the Static Web Apps Standard SKU for custom auth. The helper switches new `--company-auth` apps to `Standard`.
+- Use the Static Web Apps Standard SKU for custom auth. The helper defaults new protected apps to `Standard`.
 - If `staticwebapp.config.json` already exists, do not overwrite it. Inspect and update it carefully.
 
 Minimal auth config shape:
@@ -190,11 +201,11 @@ export AZURE_STATIC_SITE_RESOURCE_GROUP="<approved-resource-group>"
 
 This resource group must already exist and must be approved for static site deployments. The helper does not create resource groups.
 
-For company auth, the user also needs permission to create an Entra app registration or an admin-provided client ID and secret that can be stored as Static Web App app settings.
+By default, the user also needs permission to create an Entra app registration or an admin-provided client ID and secret that can be stored as Static Web App app settings.
 
 ## Manual Commands
 
-Use these only if the helper does not fit the request:
+Use these only if the helper does not fit the request. These low-level commands do not configure company-only auth by themselves.
 
 ```bash
 RG="$AZURE_STATIC_SITE_RESOURCE_GROUP"

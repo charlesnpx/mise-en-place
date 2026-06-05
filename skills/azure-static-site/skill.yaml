@@ -1,5 +1,5 @@
 name: azure-static-site
-version: 0.1.1
+version: 0.2.0
 manifest_schema: 1
 min_installer: "0.1.0"
 capabilities:

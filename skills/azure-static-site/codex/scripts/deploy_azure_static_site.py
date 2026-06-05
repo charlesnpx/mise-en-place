@@ -231,10 +231,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--location", help="Azure region for new apps")
     parser.add_argument("--subscription", help="Azure subscription id or name")
     parser.add_argument("--sku", choices=["Free", "Standard"], help="SKU for new apps")
-    parser.add_argument(
+    visibility = parser.add_mutually_exclusive_group()
+    visibility.add_argument(
+        "--public",
+        action="store_true",
+        help="Deploy without Microsoft Entra auth. Use only when public access is explicitly requested.",
+    )
+    visibility.add_argument(
         "--company-auth",
         action="store_true",
-        help="Configure single-tenant Microsoft Entra auth for company-only access",
+        help="Compatibility flag; company-only Microsoft Entra auth is enabled by default",
     )
     parser.add_argument("--tenant-id", help="Microsoft Entra tenant id")
     return parser.parse_args()
@@ -257,6 +263,7 @@ def main() -> None:
     if args.subscription:
         run(["az", "account", "set", "--subscription", args.subscription])
 
+    auth_enabled = not args.public
     subscription_id = az_account_value("id")
     tenant_id = args.tenant_id or ref.get("tenantId") or az_account_value("tenantId")
 
@@ -270,12 +277,13 @@ def main() -> None:
         )
 
     location = args.location or ref.get("location") or resource_group_location(resource_group)
-    sku = args.sku or ref.get("sku") or ("Standard" if args.company_auth else "Free")
-    if args.company_auth and sku != "Standard":
-        if ref.get("name") or args.name:
-            fail("company auth requires a Standard Static Web Apps SKU; upgrade the existing app or create a new Standard app")
-        print("info: company auth requested; using Standard SKU for new app", file=sys.stderr)
-        sku = "Standard"
+    sku = args.sku or ref.get("sku") or ("Standard" if auth_enabled else "Free")
+    if auth_enabled and sku != "Standard":
+        fail(
+            "Microsoft Entra auth is enabled by default and requires a Standard Static Web Apps SKU. "
+            "Upgrade the existing app, create a new Standard app, or pass --public only when public access "
+            "is explicitly requested."
+        )
 
     exists = static_app_exists(name, resource_group)
     if not exists:
@@ -319,7 +327,7 @@ def main() -> None:
         fail("could not resolve Static Web App defaultHostname")
 
     auth_app_id = ref.get("authAppId")
-    if args.company_auth:
+    if auth_enabled:
         write_auth_config(site_dir, tenant_id)
         if not auth_app_id:
             auth_app_id = create_auth_app(name, resource_group, host)
