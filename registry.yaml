@@ -74,15 +74,9 @@ delegated:
         manager: pipx
         package: convo-porter
         install_from: checkout
-  specops:
-    repo: github.com/charlesnpx/specops
-    channel: latest-release
-    visibility: public
-    optional: false
 experimental:
   - azure-static-site
   - browse
-  - specops
 
 external_tools:
   markitdown:
