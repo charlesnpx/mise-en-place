@@ -69,6 +69,36 @@ func captureStdout(t *testing.T, fn func()) string {
 	return string(out)
 }
 
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	original := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = w
+	restored := false
+	defer func() {
+		if !restored {
+			os.Stderr = original
+			_ = w.Close()
+			_ = r.Close()
+		}
+	}()
+	fn()
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = original
+	restored = true
+	defer r.Close()
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
+}
+
 func writeFakeExecutable(t *testing.T, dir, name, body string) string {
 	t.Helper()
 	path := filepath.Join(dir, name)
@@ -604,9 +634,10 @@ func TestInstall_LeavesLocallyModifiedFileOnUninstall(t *testing.T) {
 }
 
 func TestInstall_DirectDelegatedPrivateMessage(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	home := withFakeHome(t)
+	missingRepo := filepath.Join(home, "missing-private-repo")
 	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
-		"browse": {Repo: "github.com/charlesnpx/browse", Ref: "main", Visibility: "private", Optional: true},
+		"browse": {Repo: missingRepo, Ref: "main", Visibility: "private", Optional: true},
 	}}
 	err := One("browse", reg, Options{RunningInstaller: "0.1.0", ManifestSchema: 1})
 	if err == nil {
@@ -618,12 +649,23 @@ func TestInstall_DirectDelegatedPrivateMessage(t *testing.T) {
 }
 
 func TestInstallAll_SkipsOptionalDelegatedButFailsStrict(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	home := withFakeHome(t)
+	missingRepo := filepath.Join(home, "missing-private-repo")
 	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
-		"browse": {Repo: "github.com/charlesnpx/browse", Ref: "main", Visibility: "private", Optional: true},
+		"browse": {Repo: missingRepo, Ref: "main", Visibility: "private", Optional: true},
 	}}
-	if err := All(reg, Options{RunningInstaller: "0.1.0", ManifestSchema: 1}); err != nil {
+	var err error
+	errOut := captureStderr(t, func() {
+		err = All(reg, Options{RunningInstaller: "0.1.0", ManifestSchema: 1})
+	})
+	if err != nil {
 		t.Fatalf("optional delegated skill should be skipped by default: %v", err)
+	}
+	if !strings.Contains(errOut, "skip: delegated browse: private/team-only optional entry is not installed") {
+		t.Fatalf("expected skip output, got: %q", errOut)
+	}
+	if _, statErr := os.Stat(filepath.Join(home, ".cache", "mise-en-place", "repos", "browse")); !os.IsNotExist(statErr) {
+		t.Fatalf("default install should not clone skipped private optional repo, stat err: %v", statErr)
 	}
 	if err := All(reg, Options{RunningInstaller: "0.1.0", ManifestSchema: 1, Strict: true}); err == nil {
 		t.Fatal("expected strict install --all to fail on skipped delegated skill")
@@ -815,6 +857,42 @@ func TestDoctorAndList_ExternalTools(t *testing.T) {
 	PrintList(&listOut, s, reg)
 	if !strings.Contains(listOut.String(), "markitdown") || !strings.Contains(listOut.String(), "required by: ado-query") {
 		t.Fatalf("list output missing external tool details:\n%s", listOut.String())
+	}
+}
+
+func TestDoctor_SkipsUninstalledPrivateOptionalDelegated(t *testing.T) {
+	home := withFakeHome(t)
+	missingRepo := filepath.Join(home, "missing-private-repo")
+	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"browse": {Repo: missingRepo, Ref: "main", Visibility: "private", Optional: true},
+	}}
+	var out bytes.Buffer
+	if err := Doctor(&out, reg, Options{Target: "all"}); err != nil {
+		t.Fatalf("doctor should skip uninstalled private optional delegated repo: %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "skip: delegated browse: private/team-only optional entry is not installed") {
+		t.Fatalf("expected skip output, got:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "summary: 0 issue(s), 0 warning(s)") {
+		t.Fatalf("skip should not count as issue or warning:\n%s", out.String())
+	}
+	if _, statErr := os.Stat(filepath.Join(home, ".cache", "mise-en-place", "repos", "browse")); !os.IsNotExist(statErr) {
+		t.Fatalf("doctor should not clone skipped private optional repo, stat err: %v", statErr)
+	}
+}
+
+func TestHealth_IgnoresUninstalledPrivateOptionalDelegated(t *testing.T) {
+	home := withFakeHome(t)
+	missingRepo := filepath.Join(home, "missing-private-repo")
+	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"browse": {Repo: missingRepo, Ref: "main", Visibility: "private", Optional: true},
+	}}
+	outcome := EvaluateSetup(reg, Options{Target: "all"}, SetupOptions{InstalledOnly: true})
+	if outcome.Kind != SetupSatisfied || len(outcome.Warnings) != 0 || len(outcome.Errors) != 0 {
+		t.Fatalf("health setup should only inspect installed skills, got %+v", outcome)
+	}
+	if _, statErr := os.Stat(filepath.Join(home, ".cache", "mise-en-place", "repos", "browse")); !os.IsNotExist(statErr) {
+		t.Fatalf("health should not clone uninstalled private optional repo, stat err: %v", statErr)
 	}
 }
 
