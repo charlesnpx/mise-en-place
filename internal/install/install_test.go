@@ -870,7 +870,7 @@ func TestDoctor_SkipsUninstalledPrivateOptionalDelegated(t *testing.T) {
 	if err := Doctor(&out, reg, Options{Target: "all"}); err != nil {
 		t.Fatalf("doctor should skip uninstalled private optional delegated repo: %v\n%s", err, out.String())
 	}
-	if !strings.Contains(out.String(), "skip: delegated browse: private/team-only optional entry is not installed") {
+	if !strings.Contains(out.String(), "skip: delegated browse: private/team-only optional entry is not installed; install it by name to require access") {
 		t.Fatalf("expected skip output, got:\n%s", out.String())
 	}
 	if !strings.Contains(out.String(), "summary: 0 issue(s), 0 warning(s)") {

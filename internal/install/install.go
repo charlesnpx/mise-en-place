@@ -115,7 +115,7 @@ func All(reg *config.Registry, opts Options) error {
 		}
 		d := reg.Delegated[name]
 		if shouldSkipBroadDelegated(d, false, opts) {
-			fmt.Fprintf(os.Stderr, "skip: delegated %s: %s\n", name, broadDelegatedSkipReason(d, false))
+			fmt.Fprintf(os.Stderr, "skip: delegated %s: %s\n", name, broadDelegatedSkipReason(d, false, true))
 			continue
 		}
 		err := installDelegated(name, d, opts)

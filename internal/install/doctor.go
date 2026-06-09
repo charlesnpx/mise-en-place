@@ -46,7 +46,7 @@ func Doctor(w io.Writer, reg *config.Registry, opts Options) error {
 			installed = true
 		}
 		if shouldSkipBroadDelegated(repo, installed, opts) {
-			fmt.Fprintf(w, "skip: delegated %s: %s\n", name, broadDelegatedSkipReason(repo, installed))
+			fmt.Fprintf(w, "skip: delegated %s: %s\n", name, broadDelegatedSkipReason(repo, installed, false))
 			continue
 		}
 		err := doctorDelegated(w, s, name, repo, opts)
