@@ -50,6 +50,26 @@ type delegatedCheckout struct {
 	FallbackUsed  bool
 }
 
+func shouldSkipBroadDelegated(repo config.DelegatedRepo, installed bool, opts Options) bool {
+	return repo.IsPrivate() && repo.IsOptional() && !installed && !opts.Strict
+}
+
+func broadDelegatedSkipReason(repo config.DelegatedRepo, installed bool, strictHint bool) string {
+	if installed {
+		return "private/team-only optional entry is installed and remains applicable"
+	}
+	if repo.IsPrivate() && repo.IsOptional() {
+		if strictHint {
+			return "private/team-only optional entry is not installed; install it by name or use --strict to require access"
+		}
+		return "private/team-only optional entry is not installed; install it by name to require access"
+	}
+	if repo.IsOptional() {
+		return "optional entry is not installed"
+	}
+	return "not applicable"
+}
+
 func installDelegated(name string, repo config.DelegatedRepo, opts Options) error {
 	target := opts.Target
 	if target == "" {

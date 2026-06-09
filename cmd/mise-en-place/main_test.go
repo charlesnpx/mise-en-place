@@ -6,6 +6,16 @@ import (
 	"testing"
 )
 
+func TestRootIncludesHealthCommand(t *testing.T) {
+	cmd, _, err := newRootCmd().Find([]string{"health"})
+	if err != nil {
+		t.Fatalf("find health command: %v", err)
+	}
+	if cmd == nil || cmd.Name() != "health" {
+		t.Fatalf("expected health command to be registered, got %#v", cmd)
+	}
+}
+
 func TestInstallWithoutSkillDefaultsToAll(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

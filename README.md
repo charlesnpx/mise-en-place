@@ -64,8 +64,9 @@ point at another registry/skills tree while testing local changes.
   `channel: latest-release`. The latest-release channel resolves the highest
   stable `vMAJOR.MINOR.PATCH` git tag at install/upgrade time. Delegated entries
   may be marked `visibility: private` and `optional: true`. Direct install of a
-  private delegated skill should fail clearly if the user lacks access. Optional
-  delegated failures are warnings unless `--strict` is supplied.
+  private delegated skill should fail clearly if the user lacks access. Broad
+  install commands skip uninstalled private optional entries unless `--strict`
+  is supplied; `doctor` skips uninstalled private optional entries.
 - **Experimental skills** are managed or delegated skills listed under
   `experimental:` in `registry.yaml`. Bare `mise-en-place install` skips them.
   `mise-en-place install --all` includes them and prints a warning before each
@@ -94,15 +95,18 @@ skills; private delegated skills are intentionally optional. The intended UX is:
 
 - `mise-en-place install browse` — fail clearly if the repo is private and the
   user lacks access.
-- `mise-en-place install` — skip experimental private delegated skills.
+- `mise-en-place install` — skip uninstalled private optional delegated skills.
 - `mise-en-place install --all` — attempt experimental skills too; optional
-  private delegated failures remain warnings.
+  private delegated skills are still skipped unless they are explicit or strict.
 - `mise-en-place install --all --strict` — fail if any delegated skill cannot be
   installed.
 
 Delegated repos are cloned into `~/.cache/mise-en-place/repos/<skill>/`,
 planned through their installer contract, collision-checked, and then installed.
-Optional delegated failures are warnings unless `--strict` is supplied.
+Uninstalled private optional delegated repos are skipped before clone/fetch in
+broad commands. Other optional delegated failures are skipped during broad
+install and reported as warnings by `doctor` unless install `--strict` is
+supplied.
 
 Delegated source examples:
 

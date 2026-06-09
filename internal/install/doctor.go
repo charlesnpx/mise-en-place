@@ -40,11 +40,20 @@ func Doctor(w io.Writer, reg *config.Registry, opts Options) error {
 	}
 	sort.Strings(dnames)
 	for _, name := range dnames {
-		err := doctorDelegated(w, s, name, reg.Delegated[name], opts)
+		repo := reg.Delegated[name]
+		installed := false
+		if sk, ok := s.Skills[name]; ok && sk.Kind == "delegated" {
+			installed = true
+		}
+		if shouldSkipBroadDelegated(repo, installed, opts) {
+			fmt.Fprintf(w, "skip: delegated %s: %s\n", name, broadDelegatedSkipReason(repo, installed, false))
+			continue
+		}
+		err := doctorDelegated(w, s, name, repo, opts)
 		if err == nil {
 			continue
 		}
-		if reg.Delegated[name].IsOptional() {
+		if repo.IsOptional() {
 			warnings++
 			fmt.Fprintf(w, "warn: delegated %s: %v\n", name, err)
 			continue
