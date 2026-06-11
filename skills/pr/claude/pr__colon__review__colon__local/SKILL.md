@@ -6,7 +6,7 @@ argument-hint: "[base-ref] [branch]"
 
 You are an elite principal engineer reviewing local branch changes. Your job is to produce a thorough, actionable review printed to the terminal AND a copy-pasteable comment file.
 
-Do not use `gh`, GitHub PR metadata, GitHub PR diffs, or GitHub API file fetches. Aside from ADO lookup when a work item ID is detected, this skill reviews local committed git history only.
+Do not use `gh`, GitHub PR metadata, GitHub PR diffs, or GitHub API file fetches as review inputs. Aside from ADO lookup when a work item ID is detected, this skill reviews local committed git history only. Read-only `gh` commands may be used only to resolve the output filename's repository name and PR number; if the PR number cannot be resolved from `gh` or the branch/ref name, continue with the local fallback filename.
 
 ## Step 0: Determine review target
 
@@ -25,6 +25,8 @@ git rev-parse --verify <base-ref>
 git rev-parse --verify <branch-or-HEAD>
 git merge-base <base-ref> <branch-or-HEAD>
 ```
+
+Record `<repo-name>` for the output filename before creating any temporary worktree. Prefer the GitHub repository name from `gh repo view --json name -q .name` when available; otherwise use `basename "$(git rev-parse --show-toplevel)"`. Replace any character outside `[A-Za-z0-9._-]` with `_` when using it in the output filename.
 
 If an explicit branch is supplied, create an isolated worktree and run all review commands there:
 
@@ -141,9 +143,21 @@ Print the review in this format. Omit the `**ADO:**` line and ADO coverage secti
 
 If there are no findings in a category, omit that section.
 
-## Step 5: Write ~/Documents/pr-skills/reviews/PR_REVIEW.txt
+## Step 5: Write ~/Documents/pr-skills/reviews/PR_REVIEW_<repo-name>_<pr-number>.txt
 
-After printing the terminal review, create `~/Documents/pr-skills/reviews/` if needed, then write a file to `~/Documents/pr-skills/reviews/PR_REVIEW.txt` unless the user supplied a different output path.
+After printing the terminal review, create `~/Documents/pr-skills/reviews/` if needed, then write a file to `~/Documents/pr-skills/reviews/PR_REVIEW_<repo-name>_<pr-number>.txt` unless the user supplied a different output path. If no PR number can be resolved for the local review target, write `~/Documents/pr-skills/reviews/PR_REVIEW_<repo-name>_LOCAL_<safe-branch-or-short-head>.txt` instead.
+
+Determine `<pr-number>` in this order:
+
+1. If a GitHub PR number can be resolved with a read-only filename-only lookup, use that number:
+   - For an explicit branch: `gh pr view <branch> --json number -q .number`
+   - For the current branch: `gh pr view --json number -q .number`
+2. If the branch/ref name contains an obvious PR ref such as `pull/<number>`, `pr/<number>`, or `pr-<number>`, use that number.
+3. Otherwise use the local fallback filename with `<safe-branch-or-short-head>`, where `<safe-branch-or-short-head>` is the branch name or short `HEAD` SHA with any character outside `[A-Za-z0-9._-]` replaced by `_`.
+
+For example, a local review of PR #123 in repo `echo` writes `~/Documents/pr-skills/reviews/PR_REVIEW_echo_123.txt`. If no PR number exists for a local branch named `feature/ado-456`, write `~/Documents/pr-skills/reviews/PR_REVIEW_echo_LOCAL_feature_ado-456.txt`.
+
+Do not write to `~/Documents/pr-skills/reviews/PR_REVIEW.txt` unless the user explicitly supplied that exact output path.
 
 If the user asks for "conversation format", "full format", or "not condensed", write the full terminal-style Markdown review to the file.
 
