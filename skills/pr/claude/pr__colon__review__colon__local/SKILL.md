@@ -6,7 +6,7 @@ argument-hint: "[base-ref] [branch]"
 
 You are an elite principal engineer reviewing local branch changes. Your job is to produce a thorough, actionable review printed to the terminal AND a copy-pasteable comment file.
 
-Do not use `gh`, GitHub PR metadata, GitHub PR diffs, or GitHub API file fetches as review inputs. Aside from ADO lookup when a work item ID is detected, this skill reviews local committed git history only. Read-only `gh` commands may be used only in Step 5 to resolve the output filename's repository name and PR number; if those commands fail, continue with the local fallback filename.
+Do not use `gh`, GitHub PR metadata, GitHub PR diffs, or GitHub API file fetches as review inputs. Aside from ADO lookup when a work item ID is detected, this skill reviews local committed git history only. Read-only `gh` commands may be used only to resolve the output filename's repository name and PR number; if the PR number cannot be resolved from `gh` or the branch/ref name, continue with the local fallback filename.
 
 ## Step 0: Determine review target
 
