@@ -193,9 +193,13 @@ Print your review to the terminal in this exact format. Omit the `**ADO:**` line
 - Keep explanations concise — lead with what's wrong, not background context
 - Do NOT suggest improvements that aren't directly related to the PR's changes (don't review untouched code)
 
-## Step 5: Write ~/Documents/pr-skills/reviews/PR_REVIEW.txt
+## Step 5: Write ~/Documents/pr-skills/reviews/PR_REVIEW_<repo-name>_<pr-number>.txt
 
-After printing the terminal review, create `~/Documents/pr-skills/reviews/` if needed, then write a file to `~/Documents/pr-skills/reviews/PR_REVIEW.txt` containing copy-pasteable inline comments for the PR. Each comment should be ready to paste directly into GitHub's review UI.
+After printing the terminal review, create `~/Documents/pr-skills/reviews/` if needed, then write a file to `~/Documents/pr-skills/reviews/PR_REVIEW_<repo-name>_<pr-number>.txt` containing copy-pasteable inline comments for the PR. Each comment should be ready to paste directly into GitHub's review UI.
+
+Use the `<REPO>` portion of `<OWNER>/<REPO>` from Step 0 as `<repo-name>`, with any character outside `[A-Za-z0-9._-]` replaced by `_`. Use the reviewed PR number as `<pr-number>`. For example, reviewing PR #123 in `NPXInnovation/echo` writes `~/Documents/pr-skills/reviews/PR_REVIEW_echo_123.txt`.
+
+Do not write to `~/Documents/pr-skills/reviews/PR_REVIEW.txt` unless the user explicitly supplied that exact output path.
 
 ### Comment style guide
 

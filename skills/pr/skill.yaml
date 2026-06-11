@@ -1,5 +1,5 @@
 name: pr
-version: 0.4.1
+version: 0.4.2
 manifest_schema: 1
 min_installer: "0.1.0"
 capabilities:
