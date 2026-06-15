@@ -74,9 +74,16 @@ delegated:
         manager: pipx
         package: convo-porter
         install_from: checkout
+  feature-implement:
+    repo: github.com/charlesnpx/feature-implement
+    channel: latest-release
+    fallback_ref: main
+    visibility: public
+    optional: false
 experimental:
   - azure-static-site
   - browse
+  - feature-implement
 
 external_tools:
   markitdown:
