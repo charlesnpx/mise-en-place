@@ -187,6 +187,29 @@ external_tools:
 	}
 }
 
+func TestBundledRegistry_FeatureImplement(t *testing.T) {
+	r, err := LoadRegistry(filepath.Join("..", "..", "registry.yaml"))
+	if err != nil {
+		t.Fatalf("load bundled registry: %v", err)
+	}
+	entry, ok := r.Delegated["feature-implement"]
+	if !ok {
+		t.Fatal("feature-implement delegated entry missing")
+	}
+	if entry.Repo != "github.com/charlesnpx/feature-implement" {
+		t.Fatalf("feature-implement repo: %q", entry.Repo)
+	}
+	if entry.Channel != "latest-release" || entry.FallbackRef != "main" || entry.Ref != "" {
+		t.Fatalf("feature-implement source: ref=%q channel=%q fallback=%q", entry.Ref, entry.Channel, entry.FallbackRef)
+	}
+	if entry.Visibility != "public" || entry.Optional {
+		t.Fatalf("feature-implement visibility/optional: %+v", entry)
+	}
+	if !r.IsExperimental("feature-implement") {
+		t.Fatal("feature-implement should be experimental")
+	}
+}
+
 func TestLoadRegistry_InvalidDelegatedSource(t *testing.T) {
 	dir := t.TempDir()
 	cases := map[string]string{
