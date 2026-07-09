@@ -1,0 +1,13 @@
+name: to-audience
+version: 0.1.0
+manifest_schema: 1
+min_installer: "0.1.0"
+targets:
+  claude:
+    type: skill_dir
+    payload: claude
+    install_to: ~/.claude/skills/to-audience
+  codex:
+    type: skill_dir
+    payload: codex
+    install_to: ~/.codex/skills/to-audience
