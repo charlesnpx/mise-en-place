@@ -15,6 +15,7 @@ managed:
   - rebase-up
   - pr
   - azure-static-site
+  - to-audience
 
 renames:
   review-pr: pr
