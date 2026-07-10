@@ -87,11 +87,26 @@ delegated:
     fallback_ref: main
     visibility: public
     optional: false
+  agentbus:
+    repo: github.com/charlesnpx/agentbus
+    channel: latest-release
+    fallback_ref: main
+    visibility: private
+    optional: true
+  # delegate requires agentbus on PATH; install agentbus first.
+  delegate:
+    repo: github.com/charlesnpx/delegate
+    channel: latest-release
+    fallback_ref: main
+    visibility: private
+    optional: true
 experimental:
   - azure-static-site
   - browse
   - feature-implement
   - subreview
+  - agentbus
+  - delegate
 
 external_tools:
   markitdown:
