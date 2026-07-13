@@ -1,0 +1,4 @@
+interface:
+  display_name: "Prose"
+  short_description: "Write concise, flowing technical prose"
+  default_prompt: "Use $prose to answer in concise, flowing technical prose."

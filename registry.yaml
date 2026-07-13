@@ -16,6 +16,7 @@ managed:
   - pr
   - azure-static-site
   - to-audience
+  - prose
 
 renames:
   review-pr: pr
