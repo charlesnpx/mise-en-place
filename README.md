@@ -327,7 +327,8 @@ The JSON shape is intentionally small:
       ]
     }
   },
-  "warnings": []
+  "warnings": [],
+  "notices": []
 }
 ```
 
@@ -343,6 +344,9 @@ Rules:
   by setup.
 - `operation` is one of `plan`, `install`, or `uninstall`.
 - `kind` must be `delegated`.
+- `warnings` are printed to stderr after a successful delegated install.
+- `notices` are printed to stdout after a successful delegated install or an
+  already-current delegated upgrade; use them for manual follow-up instructions.
 - File paths must be absolute.
 - With `--install-root`, installed file paths in JSON must be absolute paths
   inside that root, such as `/tmp/stage/.codex/skills/keyframe/SKILL.md`.

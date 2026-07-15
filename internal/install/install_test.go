@@ -223,6 +223,15 @@ func TestInstall_Managed_DualTarget(t *testing.T) {
 	}
 }
 
+func TestPrintDelegatedNoticesUsesStdout(t *testing.T) {
+	out := captureStdout(t, func() {
+		printDelegatedNotices("paperclip", []string{"add Paperclip instructions to AGENTS.md", "  "})
+	})
+	if !strings.Contains(out, "notice: paperclip: add Paperclip instructions to AGENTS.md") {
+		t.Fatalf("stdout = %q", out)
+	}
+}
+
 func TestBuildPlan_DecodesColonEscapedSkillDirPaths(t *testing.T) {
 	home := withFakeHome(t)
 	skillDir := filepath.Join(home, "skills", "pr")
