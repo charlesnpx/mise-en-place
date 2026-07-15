@@ -54,6 +54,11 @@ delegated:
         manager: pipx
         package: keyframe
         install_from: checkout
+  paperclip:
+    repo: github.com/charlesnpx/paperclip
+    channel: latest-release
+    visibility: public
+    optional: false
   figma-fetch:
     repo: github.com/charlesnpx/figma-fetch
     channel: latest-release
