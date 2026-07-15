@@ -29,6 +29,7 @@ type delegatedResult struct {
 	Setup        []config.SetupRequirement        `json:"setup,omitempty"`
 	Targets      map[string]delegatedTargetResult `json:"targets"`
 	Warnings     []string                         `json:"warnings"`
+	Notices      []string                         `json:"notices"`
 }
 
 type delegatedTargetResult struct {
@@ -180,6 +181,7 @@ func installDelegated(name string, repo config.DelegatedRepo, opts Options) erro
 	for _, warning := range staged.Warnings {
 		fmt.Fprintf(os.Stderr, "warn: %s: %s\n", name, warning)
 	}
+	printDelegatedNotices(name, staged.Notices)
 	fmt.Printf("installed %s %s (%s delegated)\n", name, staged.Version, strings.Join(delegatedInstalledTargetNames(staged.Targets, tools), ", "))
 	if skipped > 0 {
 		fmt.Fprintf(os.Stderr, "partial install: skipped %d divergent file(s); skipped files were not recorded in state\n", skipped)
@@ -236,6 +238,7 @@ func upgradeDelegated(name string, repo config.DelegatedRepo, opts Options) erro
 			current.FallbackRef == checkout.FallbackRef &&
 			delegatedPlannedTargetsCurrent(planned.Targets, current.Targets) &&
 			delegatedPipxToolsCurrent(repo.Tools, current.Tools) {
+			printDelegatedNotices(name, planned.Notices)
 			fmt.Printf("%s already up to date (%s @ %s)\n", name, current.Version, current.Ref)
 			return nil
 		}
@@ -244,6 +247,15 @@ func upgradeDelegated(name string, repo config.DelegatedRepo, opts Options) erro
 		return err
 	}
 	return installDelegated(name, repo, opts)
+}
+
+func printDelegatedNotices(name string, notices []string) {
+	for _, notice := range notices {
+		if strings.TrimSpace(notice) == "" {
+			continue
+		}
+		fmt.Printf("notice: %s: %s\n", name, notice)
+	}
 }
 
 func uninstallDelegated(name string, sk state.Skill) error {
