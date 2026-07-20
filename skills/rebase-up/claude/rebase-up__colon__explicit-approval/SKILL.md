@@ -1,6 +1,6 @@
 ---
-name: rebase-up
-description: "Walk a chain of stacked branches and rebase each onto its parent, propagating any accumulated changes upward. Creates timestamped backup branches first and validates nothing is lost after each step. Use when changes on a lower branch need to flow up through the stack."
+name: "rebase-up:explicit-approval"
+description: "Approval-gated variant of rebase-up. Walk a chain of stacked branches and rebase each onto its parent, creating backups and validating after each step. Use when the user invokes rebase-up:explicit-approval or wants confirmation before starting and after every branch."
 argument-hint: "[starting-branch] branch-1 branch-2 branch-3 ... (ordered chain from root to tip)"
 ---
 

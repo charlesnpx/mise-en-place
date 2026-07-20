@@ -1,10 +1,17 @@
 ---
 name: rebase-up
-description: "Walk a chain of stacked branches and rebase each onto its parent, propagating accumulated changes upward. Creates timestamped backup branches first and validates nothing is lost after each step. Use when changes on a lower branch need to flow up through a branch stack, or when the user invokes rebase-up."
+description: "Walk a chain of stacked branches and rebase each onto its parent, propagating accumulated changes upward. Creates timestamped backup branches first and validates nothing is lost after each step. Use when changes on a lower branch need to flow up through a branch stack, or when the user invokes rebase-up. By default, starts without approval when the base and ordered chain are known, continues after clean verification, and stops only for missing inputs, blockers, non-trivial conflicts, or suspicious rebase results."
 argument-hint: "[starting/base branch] branch-1 branch-2 branch-3 ... (ordered chain from root to tip)"
 ---
 
 You are performing a careful, verified walk up a stacked branch chain, rebasing each branch onto its parent so that accumulated changes propagate upward naturally.
+
+Default to autonomous verified propagation:
+
+- Do not ask for approval to start when the base branch and complete ordered chain are known.
+- Do not ask for confirmation after each branch when the rebase and verification are clean.
+- Stop and ask only for missing or ambiguous inputs, dirty-state blockers, command failures, non-obvious or non-trivial conflicts, verification mismatches, possible commit loss, or any action that needs user judgment.
+- If the user explicitly asks for per-step approval, use `rebase-up:explicit-approval` instead.
 
 The default base branch is `main`, unless the user specifies a different base.
 
@@ -34,7 +41,7 @@ The user provides the branch chain in their request. There are three modes:
 
 In all cases, you must know the complete ordered chain and the base branch before proceeding. If unsure, ask. Do not guess branch order from names; naming conventions vary.
 
-## Step 0: Confirm the chain
+## Step 0: Resolve the chain
 
 Print the chain clearly:
 
@@ -57,7 +64,17 @@ Branch chain (starting from branch-B):
   4. branch-D          <- rebase onto branch-C
 ```
 
-Ask the user to confirm the chain is correct before proceeding. Do not continue until they confirm.
+If the base and ordered chain are complete and unambiguous, proceed without asking for confirmation. If the base branch, parent branch for the starting point, or branch order is unknown or ambiguous, ask only for the missing information. Do not guess branch order from names.
+
+Before creating backups, run a preflight:
+
+```bash
+git status --short --branch
+git rev-parse --verify <base-or-fixed-parent>
+git rev-parse --verify <branch-to-rebase>
+```
+
+Also verify there is no rebase, merge, cherry-pick, or revert already in progress. If the worktree is dirty, an operation is already in progress, or any branch cannot be resolved, stop and ask the user how to proceed.
 
 ## Critical Safety Protocol: Backups First
 
@@ -118,13 +135,19 @@ git rebase <its-parent-branch>
 
 The parent is the branch immediately before it in the chain, or the base for the first branch. Since you process in order, each parent has already been rebased by the time you reach its child.
 
-If the rebase reports "Current branch is up to date", record it as a no-op and move on after status reporting.
+If the rebase reports "Current branch is up to date", record it as a no-op, print the status, and continue to the next branch without asking for confirmation.
 
-If there are conflicts, stop immediately. Print the conflicting files, show enough conflict-marker context to understand the issue, and ask the user how to resolve. Do not auto-resolve. Do not use `--skip` or `--abort` without explicit user instruction.
+If there are conflicts, inspect them immediately:
+
+- Resolve automatically only when the resolution is obvious and trivial: the intended file contents are directly implied by surrounding context, both sides are preserving the same intent, and you can explain the resolution in one sentence.
+- After any automatic conflict resolution, stage the resolved files, continue the rebase, and run the full verification below.
+- If the conflict is semantic, touches user intent, deletes or rewrites meaningful code, involves generated artifacts without a deterministic regeneration path, or is uncertain in any way, stop. Print the conflicting files, show enough conflict-marker context to understand the issue, and ask the user how to resolve.
+
+Do not use `git rebase --skip` or `git rebase --abort` without explicit user instruction.
 
 ### Step 4: Verify after each rebase
 
-After each successful rebase, run these checks. For no-ops, report the no-op and continue only after the required confirmation.
+After each successful rebase, run these checks. For no-ops, report the no-op and continue.
 
 **Commit count:**
 
@@ -132,7 +155,7 @@ After each successful rebase, run these checks. For no-ops, report the no-op and
 git log --oneline <parent>..<branch> | wc -l
 ```
 
-Compare to the Step 2 snapshot. The count should be the same; the branch's own commits should be preserved, just replayed on a new base. A significant drop is a red flag.
+Compare to the Step 2 snapshot. The count should usually be the same; the branch's own commits should be preserved, just replayed on a new base. A significant or unexplained drop is a red flag.
 
 **Diff stat:**
 
@@ -162,7 +185,7 @@ git log --oneline <branch>..<branch-backup-TIMESTAMP>
 
 After a rebase, old SHAs are replaced with new ones, so the second list will usually be non-empty. Every commit listed there should have a corresponding commit, with the same message and equivalent diff, in the first list. If any commit appears lost with no rebased equivalent, stop and alert the user.
 
-**Print status:**
+**Print status and continue on clean results:**
 
 ```text
 OK  branch-C: rebased onto branch-B
@@ -171,7 +194,7 @@ OK  branch-C: rebased onto branch-B
     Backup diff: only propagated changes
 ```
 
-Ask the user to confirm this branch looks correct before moving to the next one. Wait for confirmation.
+If all checks are clean and any conflict resolution was obvious and trivial, continue to the next branch without asking. If any check is suspicious or cannot be confidently explained as expected propagation from lower in the chain, stop and ask.
 
 ### Step 5: Repeat for each branch
 
@@ -208,8 +231,9 @@ To delete all backups at once:
 - Never force-push. The user decides when and whether to force-push.
 - Never delete backup branches. Only the user deletes backups.
 - Never skip verification. Every single rebase gets all checks.
-- Never auto-resolve conflicts. Stop and involve the user.
-- Never proceed to the next branch without explicit user confirmation that the current one looks correct.
+- Never auto-resolve non-obvious or non-trivial conflicts. Stop and involve the user.
+- Never ask for routine start or per-branch approval when the inputs are complete and verification is clean.
 - Never use `git merge`. This workflow is rebase-only to keep history clean.
 - Never guess the branch order. If you do not know the chain, ask.
+- Never use `git rebase --skip` or `git rebase --abort` without explicit user instruction.
 - If anything looks wrong at any point, stop, show what you see, and ask. The backups exist for exactly this reason.

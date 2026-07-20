@@ -1,13 +1,13 @@
 name: rebase-up
-version: 0.1.1
+version: 0.1.2
 manifest_schema: 1
 min_installer: "0.1.0"
 targets:
   claude:
     type: skill_dir
     payload: claude
-    install_to: ~/.claude/skills/rebase-up
+    install_to: ~/.claude/skills
   codex:
     type: skill_dir
     payload: codex
-    install_to: ~/.codex/skills/rebase-up
+    install_to: ~/.codex/skills
