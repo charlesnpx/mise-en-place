@@ -1,4 +1,0 @@
-interface:
-  display_name: "Gemini Vision"
-  short_description: "Interpret images with Gemini CLI"
-  default_prompt: "Use $gemini-vision to summarize or interpret this image with Gemini CLI."
