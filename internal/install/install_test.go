@@ -2,6 +2,7 @@ package install
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
@@ -869,8 +870,260 @@ func TestDoctorAndList_ExternalTools(t *testing.T) {
 	}
 }
 
+func TestInventoryVisibleSkills_CodexClaudeAndCommandsIgnoreHiddenEntries(t *testing.T) {
+	home := withFakeHome(t)
+	codexRoot := filepath.Join(home, ".codex", "skills")
+	claudeRoot := filepath.Join(home, ".claude", "skills")
+	commandsRoot := filepath.Join(home, ".claude", "commands")
+
+	writeVisibleSkill(t, codexRoot, "relay")
+	writeVisibleSkill(t, claudeRoot, "feature:implement")
+	writeVisibleClaudeCommand(t, commandsRoot, "export-to-codex")
+	writeVisibleSkill(t, codexRoot, ".system")
+	writeVisibleSkill(t, claudeRoot, ".hidden")
+	writeVisibleClaudeCommand(t, commandsRoot, ".hidden-command")
+	if err := os.WriteFile(filepath.Join(claudeRoot, "archive.zip"), []byte("not a skill\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	visible, err := inventoryVisibleSkills()
+	if err != nil {
+		t.Fatalf("inventory: %v", err)
+	}
+	if !visible["relay"][visibleHostCodex] {
+		t.Fatalf("Codex relay skill missing from inventory: %+v", visible)
+	}
+	if !visible["feature:implement"][visibleHostClaude] {
+		t.Fatalf("Claude feature skill missing from inventory: %+v", visible)
+	}
+	if !visible["export-to-codex"][visibleHostClaude] {
+		t.Fatalf("Claude command missing from inventory: %+v", visible)
+	}
+	for _, hidden := range []string{".system", ".hidden", ".hidden-command"} {
+		if _, ok := visible[hidden]; ok {
+			t.Fatalf("hidden entry %s should not be inventoried: %+v", hidden, visible)
+		}
+	}
+}
+
+func TestDoctor_VisibleOrphanReportsIndependentDependencies(t *testing.T) {
+	home := withFakeHome(t)
+	visiblePath := writeVisibleSkill(t, filepath.Join(home, ".codex", "skills"), "visible-alias")
+	agentPath := filepath.Join(home, ".codex", "skills", "visible-alias", "agents", "openai.yaml")
+	scriptPath := filepath.Join(home, ".codex", "skills", "visible-alias", "scripts", "helper.py")
+	claudePath := filepath.Join(home, ".claude", "skills", "visible-alias", "SKILL.md")
+	toolPath := filepath.Join(home, ".local", "bin", "installer-cli")
+	repo := writeDoctorContractRepo(t, home, "owner", map[string][]string{
+		"claude": {claudePath},
+		"codex":  {visiblePath, agentPath, scriptPath},
+		"tools":  {toolPath},
+	}, []config.SetupCapability{config.CapabilityQuery}, []config.SetupRequirement{
+		{
+			Kind:        config.SetupEnv,
+			Env:         "DOCTOR_TOKEN",
+			ValueClass:  config.ValueSecret,
+			RequiredFor: []config.SetupCapability{config.CapabilityQuery},
+		},
+		{
+			Kind:        config.SetupExecutable,
+			Executable:  "support-cli",
+			RequiredFor: []config.SetupCapability{config.CapabilityQuery},
+		},
+		{
+			Kind:        config.SetupGitHubCLIAuth,
+			RequiredFor: []config.SetupCapability{config.CapabilityQuery},
+		},
+	})
+	bin := filepath.Join(home, "doctor-bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFakeExecutable(t, bin, "gh", "#!/bin/sh\nexit 1\n")
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+"/usr/bin:/bin:/usr/sbin:/sbin")
+	t.Setenv("DOCTOR_TOKEN", "")
+
+	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"owner": {
+			Repo:       repo,
+			Ref:        "main",
+			Visibility: "private",
+			Optional:   true,
+			Provides:   []string{"visible-alias"},
+			Tools: []config.DelegatedToolSpec{{
+				Executable: "owner-tool",
+				Manager:    "pipx",
+				Package:    "owner-tool",
+			}},
+		},
+	}}
+	var out bytes.Buffer
+	if err := Doctor(&out, reg, Options{Target: "all"}); err != nil {
+		t.Fatalf("visible orphan findings should remain warnings: %v\n%s", err, out.String())
+	}
+	text := out.String()
+	for _, want := range []string{
+		"state is absent for visible skill or command visible-alias",
+		"codex target missing " + agentPath,
+		"codex target missing " + scriptPath,
+		"tools target missing " + toolPath,
+		"missing delegated tool executable owner-tool on PATH",
+		"environment variable DOCTOR_TOKEN is not set",
+		"executable support-cli is not on PATH",
+		"gh auth status failed; run gh auth login",
+		"summary: 0 issue(s), 8 warning(s)",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("doctor output missing %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "claude target missing "+claudePath) {
+		t.Fatalf("non-visible Claude host should not be checked:\n%s", text)
+	}
+	if got := strings.Count(text, "repair with: mise-en-place install owner"); got != 5 {
+		t.Fatalf("expected repair command on state and four dependency warnings, got %d:\n%s", got, text)
+	}
+	logBody, err := os.ReadFile(filepath.Join(home, "doctor-installer.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(logBody); got != "plan:all\n" {
+		t.Fatalf("delegated contract should resolve exactly once, got log:\n%s", got)
+	}
+}
+
+func TestDoctor_VisibleOrphanBrowseReportsAbsentStateAndMissingPipxCLI(t *testing.T) {
+	home := withFakeHome(t)
+	visiblePath := writeVisibleSkill(t, filepath.Join(home, ".codex", "skills"), "browse")
+	repo := writeDoctorContractRepo(t, home, "browse", map[string][]string{
+		"codex": {visiblePath},
+	}, nil, nil)
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(home, "git-only-bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(gitPath, filepath.Join(bin, "git")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"browse": {
+			Repo:       repo,
+			Ref:        "main",
+			Visibility: "private",
+			Optional:   true,
+			Tools: []config.DelegatedToolSpec{{
+				Executable: "browse",
+				Manager:    "pipx",
+				Package:    "browse",
+			}},
+		},
+	}}
+	var out bytes.Buffer
+	if err := Doctor(&out, reg, Options{Target: "all"}); err != nil {
+		t.Fatalf("doctor: %v\n%s", err, out.String())
+	}
+	for _, want := range []string{
+		"state is absent for visible skill or command browse",
+		"missing delegated tool executable browse on PATH",
+		"summary: 0 issue(s), 2 warning(s)",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("doctor output missing %q:\n%s", want, out.String())
+		}
+	}
+}
+
+func TestDoctor_VisibleOrphanNPXADOQueryReportsInstallerOwnedCLI(t *testing.T) {
+	home := withFakeHome(t)
+	visiblePath := writeVisibleSkill(t, filepath.Join(home, ".codex", "skills"), "npx-ado-query")
+	toolPath := filepath.Join(home, ".local", "bin", "npx-ado-query")
+	repo := writeDoctorContractRepo(t, home, "npx-ado-query", map[string][]string{
+		"codex": {visiblePath},
+		"tools": {toolPath},
+	}, nil, nil)
+	t.Setenv("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
+	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+		"npx-ado-query": {
+			Repo:       repo,
+			Ref:        "main",
+			Visibility: "private",
+			Optional:   true,
+		},
+	}}
+	var out bytes.Buffer
+	if err := Doctor(&out, reg, Options{Target: "all"}); err != nil {
+		t.Fatalf("doctor: %v\n%s", err, out.String())
+	}
+	for _, want := range []string{
+		"state is absent for visible skill or command npx-ado-query",
+		"tools target missing " + toolPath,
+		"repair with: mise-en-place install npx-ado-query",
+		"summary: 0 issue(s), 2 warning(s)",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("doctor output missing %q:\n%s", want, out.String())
+		}
+	}
+}
+
+func TestDoctor_ProvidedAliasesActivateOwningContract(t *testing.T) {
+	cases := []struct {
+		owner      string
+		provided   []string
+		visible    string
+		host       string
+		visibility string
+		optional   bool
+	}{
+		{owner: "convo-relay", provided: []string{"relay", "relay:steer"}, visible: "relay", host: visibleHostCodex, visibility: "private", optional: true},
+		{owner: "convo-porter", provided: []string{"export-to-claude", "export-to-codex"}, visible: "export-to-codex", host: visibleHostClaude},
+		{owner: "feature-implement", provided: []string{"feature", "feature:implement"}, visible: "feature:implement", host: visibleHostCodex},
+	}
+	for _, tc := range cases {
+		t.Run(tc.owner, func(t *testing.T) {
+			home := withFakeHome(t)
+			var visiblePath string
+			if tc.owner == "convo-porter" {
+				visiblePath = writeVisibleClaudeCommand(t, filepath.Join(home, ".claude", "commands"), tc.visible)
+			} else if tc.host == visibleHostClaude {
+				visiblePath = writeVisibleSkill(t, filepath.Join(home, ".claude", "skills"), tc.visible)
+			} else {
+				visiblePath = writeVisibleSkill(t, filepath.Join(home, ".codex", "skills"), tc.visible)
+			}
+			repo := writeDoctorContractRepo(t, home, tc.owner, map[string][]string{
+				tc.host: {visiblePath},
+			}, nil, nil)
+			reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
+				tc.owner: {
+					Repo:       repo,
+					Ref:        "main",
+					Visibility: tc.visibility,
+					Optional:   tc.optional,
+					Provides:   tc.provided,
+				},
+			}}
+			var out bytes.Buffer
+			if err := Doctor(&out, reg, Options{Target: "all"}); err != nil {
+				t.Fatalf("doctor: %v\n%s", err, out.String())
+			}
+			if !strings.Contains(out.String(), "state is absent for visible skill or command "+tc.visible) {
+				t.Fatalf("provided alias did not activate owner:\n%s", out.String())
+			}
+			if !strings.Contains(out.String(), "mise-en-place install "+tc.owner) {
+				t.Fatalf("owner remediation missing:\n%s", out.String())
+			}
+		})
+	}
+}
+
 func TestDoctor_SkipsUninstalledPrivateOptionalDelegated(t *testing.T) {
 	home := withFakeHome(t)
+	writeVisibleSkill(t, filepath.Join(home, ".codex", "skills"), "unknown-skill")
+	writeVisibleSkill(t, filepath.Join(home, ".codex", "skills"), ".browse")
 	missingRepo := filepath.Join(home, "missing-private-repo")
 	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
 		"browse": {Repo: missingRepo, Ref: "main", Visibility: "private", Optional: true},
@@ -1101,6 +1354,93 @@ fi
 	run(t, repo, "git", "add", ".")
 	run(t, repo, "git", "commit", "-m", "init")
 	return repo
+}
+
+func writeDoctorContractRepo(
+	t *testing.T,
+	root string,
+	name string,
+	targets map[string][]string,
+	capabilities []config.SetupCapability,
+	setup []config.SetupRequirement,
+) string {
+	t.Helper()
+	repo := filepath.Join(root, name+"-doctor-repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	contractTargets := make(map[string]delegatedTargetResult, len(targets))
+	for targetName, paths := range targets {
+		target := delegatedTargetResult{}
+		for _, path := range paths {
+			target.Files = append(target.Files, delegatedFileResult{Path: path})
+		}
+		contractTargets[targetName] = target
+	}
+	contract := delegatedResult{
+		Schema:       1,
+		Name:         name,
+		Version:      "0.1.0",
+		Operation:    "plan",
+		Kind:         "delegated",
+		Capabilities: capabilities,
+		Setup:        setup,
+		Targets:      contractTargets,
+		Warnings:     []string{},
+	}
+	body, err := json.Marshal(contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "doctor-plan.json"), append(body, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	script := `#!/bin/sh
+set -eu
+target=all
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --target) shift; target="$1" ;;
+  esac
+  shift
+done
+printf 'plan:%s\n' "$target" >> "$HOME/doctor-installer.log"
+script_dir=${0%/*}
+exec /bin/cat "$script_dir/doctor-plan.json"
+`
+	if err := os.WriteFile(filepath.Join(repo, "install-skill.sh"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run(t, repo, "git", "init", "-b", "main")
+	run(t, repo, "git", "config", "user.email", "test@example.com")
+	run(t, repo, "git", "config", "user.name", "Test")
+	run(t, repo, "git", "add", ".")
+	run(t, repo, "git", "commit", "-m", "init")
+	return repo
+}
+
+func writeVisibleSkill(t *testing.T, root, name string) string {
+	t.Helper()
+	path := filepath.Join(root, name, "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("# "+name+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func writeVisibleClaudeCommand(t *testing.T, root, name string) string {
+	t.Helper()
+	path := filepath.Join(root, name+".md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("# "+name+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 func writeDelegatedInstallerToolRepo(t *testing.T, root, name string) string {

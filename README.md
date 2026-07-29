@@ -63,10 +63,12 @@ point at another registry/skills tree while testing local changes.
   are declared in `registry.yaml` with either an exact `ref` pin or
   `channel: latest-release`. The latest-release channel resolves the highest
   stable `vMAJOR.MINOR.PATCH` git tag at install/upgrade time. Delegated entries
-  may be marked `visibility: private` and `optional: true`. Direct install of a
-  private delegated skill should fail clearly if the user lacks access. Broad
-  install commands skip uninstalled private optional entries unless `--strict`
-  is supplied; `doctor` skips uninstalled private optional entries.
+  may declare their visible skill or command names under `provides` and may be
+  marked `visibility: private` and `optional: true`. Direct install of a private
+  delegated skill should fail clearly if the user lacks access. Broad install
+  commands skip uninstalled private optional entries unless `--strict` is
+  supplied; `doctor` skips them unless one of their provided payloads is visible
+  on disk.
 - **Experimental skills** are managed or delegated skills listed under
   `experimental:` in `registry.yaml`. Bare `mise-en-place install` skips them.
   `mise-en-place install --all` includes them and prints a warning before each
@@ -80,8 +82,8 @@ point at another registry/skills tree while testing local changes.
 - **Setup requirements** are declarative prerequisites exposed by managed
   manifests and delegated installer JSON. `mise-en-place setup` evaluates them
   and prints remediation without mutating shell profiles or secrets. `health`
-  checks installed skills only, and `doctor` warns when installed skills are not
-  set up.
+  checks installed skills only, and `doctor` warns when installed or visible
+  delegated skills are not set up.
 - **Dual targets:** every managed skill can declare a `claude` payload and a
   `codex` payload. `mise-en-place port <skill> --from <host> --to <host>`
   drafts a translation between the two using the agent CLI; the human
@@ -124,6 +126,12 @@ delegated:
     fallback_ref: main
     visibility: private
     optional: true
+  convo-relay:
+    repo: github.com/charlesnpx/convo-relay
+    channel: latest-release
+    provides:
+      - relay
+      - relay:steer
 experimental:
   - browse
 ```
@@ -132,6 +140,38 @@ Use exact `ref` pins when reproducibility matters. Use
 `channel: latest-release` for delegated tools that should advance when their
 own repo publishes a newer stable release. `fallback_ref` keeps untagged repos
 usable until they start publishing release tags.
+
+`provides` maps user-visible payload names back to their delegated registry
+owner. When omitted, it defaults to the registry key. A provided name can belong
+to only one delegated entry and cannot collide with another registry entry or a
+rename.
+
+## Visible skill dependency recovery
+
+Installer state and visible files can drift apart after state loss, a partial
+restore, or a manual skill copy. `mise-en-place doctor` inventories these
+user-visible entry points:
+
+- `~/.codex/skills/<name>/SKILL.md`
+- `~/.claude/skills/<name>/SKILL.md`
+- `~/.claude/commands/<name>.md`
+
+Hidden entries, including Codex's `.system` directory, are ignored. Unknown
+names that are not provided by the registry are also ignored.
+
+A delegated entry is applicable when it is recorded in state or one of its
+provided names is visible. This lets a visible private/optional payload bypass
+the normal broad-command skip. Doctor resolves that owner's delegated plan once
+and reuses it to check every planned file for each visible host, every planned
+`tools` file, registry-declared executables on `PATH`, and declarative setup
+requirements such as environment variables and authentication.
+
+When a visible payload has no state record, doctor reports the absent state and
+each missing dependency separately, with `mise-en-place install <owner>` as the
+repair command. These orphan findings are warnings so unrelated healthy work is
+not blocked. Integrity drift for files already owned in state remains an error.
+Private optional entries with neither state nor a visible payload remain skipped
+before any repository access.
 
 ## External tools
 
@@ -230,7 +270,8 @@ Exit codes are stable:
 - `3` — misuse, such as an unknown skill or invalid capability filter
 
 `mise-en-place health` runs the same checks for installed skills only. `doctor`
-keeps its integrity checks and adds setup warnings for installed skills.
+keeps its integrity checks and adds setup warnings for installed skills and
+visible delegated orphans.
 
 ## Existing files
 

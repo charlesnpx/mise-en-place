@@ -131,6 +131,9 @@ delegated:
     ref: main
     visibility: private
     optional: true
+    provides:
+      - browser
+      - browser:inspect
 experimental:
   - browse
 external_tools:
@@ -176,6 +179,12 @@ external_tools:
 	if !r.Delegated["browse"].IsPrivate() || !r.Delegated["browse"].IsOptional() {
 		t.Errorf("browse should parse as private optional: %+v", r.Delegated["browse"])
 	}
+	if got := r.ProvidedSkills("keyframe"); len(got) != 1 || got[0] != "keyframe" {
+		t.Errorf("keyframe default provides: %v", got)
+	}
+	if got := r.ProvidedSkills("browse"); len(got) != 2 || got[0] != "browser" || got[1] != "browser:inspect" {
+		t.Errorf("browse explicit provides: %v", got)
+	}
 	if !r.IsExperimental("browse") || r.IsExperimental("keyframe") {
 		t.Errorf("experimental flags parsed incorrectly: %+v", r.Experimental)
 	}
@@ -207,6 +216,116 @@ func TestBundledRegistry_FeatureImplement(t *testing.T) {
 	}
 	if !r.IsExperimental("feature-implement") {
 		t.Fatal("feature-implement should be experimental")
+	}
+	if got := r.ProvidedSkills("feature-implement"); len(got) != 2 || got[0] != "feature" || got[1] != "feature:implement" {
+		t.Fatalf("feature-implement provides: %v", got)
+	}
+	if got := r.ProvidedSkills("convo-relay"); len(got) != 2 || got[0] != "relay" || got[1] != "relay:steer" {
+		t.Fatalf("convo-relay provides: %v", got)
+	}
+	if got := r.ProvidedSkills("convo-porter"); len(got) != 2 || got[0] != "export-to-claude" || got[1] != "export-to-codex" {
+		t.Fatalf("convo-porter provides: %v", got)
+	}
+}
+
+func TestLoadRegistry_InvalidDelegatedProvides(t *testing.T) {
+	dir := t.TempDir()
+	cases := map[string]string{
+		"empty name": `
+delegated:
+  tool:
+    repo: github.com/charlesnpx/tool
+    ref: main
+    provides:
+      - ""
+`,
+		"surrounding whitespace": `
+delegated:
+  tool:
+    repo: github.com/charlesnpx/tool
+    ref: main
+    provides:
+      - " alias "
+`,
+		"duplicate name": `
+delegated:
+  tool:
+    repo: github.com/charlesnpx/tool
+    ref: main
+    provides:
+      - alias
+      - alias
+`,
+		"shared alias": `
+delegated:
+  alpha:
+    repo: github.com/charlesnpx/alpha
+    ref: main
+    provides:
+      - alias
+  beta:
+    repo: github.com/charlesnpx/beta
+    ref: main
+    provides:
+      - alias
+`,
+		"managed collision": `
+managed:
+  - alias
+delegated:
+  tool:
+    repo: github.com/charlesnpx/tool
+    ref: main
+    provides:
+      - alias
+`,
+		"delegated key collision": `
+delegated:
+  alpha:
+    repo: github.com/charlesnpx/alpha
+    ref: main
+  beta:
+    repo: github.com/charlesnpx/beta
+    ref: main
+    provides:
+      - alpha
+`,
+		"external tool collision": `
+delegated:
+  tool:
+    repo: github.com/charlesnpx/tool
+    ref: main
+    provides:
+      - helper
+external_tools:
+  helper:
+    executable: helper
+    manager: pipx
+    package: helper
+`,
+		"rename source collision": `
+managed:
+  - current
+renames:
+  alias: current
+delegated:
+  tool:
+    repo: github.com/charlesnpx/tool
+    ref: main
+    provides:
+      - alias
+`,
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(dir, name+".yaml")
+			if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := LoadRegistry(path); err == nil {
+				t.Fatal("expected delegated provides validation error")
+			}
+		})
 	}
 }
 
