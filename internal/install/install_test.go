@@ -997,7 +997,18 @@ func TestDoctor_VisibleOrphanBrowseReportsAbsentStateAndMissingPipxCLI(t *testin
 	repo := writeDoctorContractRepo(t, home, "browse", map[string][]string{
 		"codex": {visiblePath},
 	}, nil, nil)
-	t.Setenv("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(home, "git-only-bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(gitPath, filepath.Join(bin, "git")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
 	reg := &config.Registry{Delegated: map[string]config.DelegatedRepo{
 		"browse": {
 			Repo:       repo,
