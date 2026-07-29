@@ -69,12 +69,18 @@ delegated:
     fallback_ref: main
     visibility: private
     optional: true
+    provides:
+      - relay
+      - relay:steer
   convo-porter:
     repo: github.com/charlesnpx/convo-porter
     channel: latest-release
     fallback_ref: main
     visibility: public
     optional: false
+    provides:
+      - export-to-claude
+      - export-to-codex
     tools:
       - executable: convo-porter
         manager: pipx
@@ -86,6 +92,9 @@ delegated:
     fallback_ref: main
     visibility: public
     optional: false
+    provides:
+      - feature
+      - feature:implement
   subreview:
     repo: github.com/charlesnpx/subreview
     channel: latest-release

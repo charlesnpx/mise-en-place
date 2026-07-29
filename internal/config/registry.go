@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -28,6 +29,7 @@ type DelegatedRepo struct {
 	FallbackRef string              `yaml:"fallback_ref"` // used by latest-release when no release tags exist
 	Visibility  string              `yaml:"visibility"`   // public | private; defaults to public
 	Optional    bool                `yaml:"optional"`     // optional delegated repos are skipped by install --all unless --strict
+	Provides    []string            `yaml:"provides"`     // visible skill/command names; defaults to the registry key
 	Tools       []DelegatedToolSpec `yaml:"tools"`
 }
 
@@ -113,6 +115,20 @@ func (r *Registry) Validate() error {
 		if d.Visibility != "" && d.Visibility != "public" && d.Visibility != "private" {
 			return fmt.Errorf("registry.yaml: delegated %s has invalid visibility %q (expected public or private)", name, d.Visibility)
 		}
+		providedSeen := map[string]bool{}
+		for i, provided := range d.Provides {
+			label := fmt.Sprintf("registry.yaml: delegated %s provides[%d]", name, i)
+			if strings.TrimSpace(provided) == "" {
+				return fmt.Errorf("%s is empty", label)
+			}
+			if provided != strings.TrimSpace(provided) {
+				return fmt.Errorf("%s has surrounding whitespace", label)
+			}
+			if providedSeen[provided] {
+				return fmt.Errorf("registry.yaml: delegated %s provides %s more than once", name, provided)
+			}
+			providedSeen[provided] = true
+		}
 		for i, tool := range d.Tools {
 			label := fmt.Sprintf("registry.yaml: delegated %s tools[%d]", name, i)
 			if tool.Executable == "" {
@@ -130,6 +146,21 @@ func (r *Registry) Validate() error {
 			if tool.InstallFrom != "" && tool.InstallFrom != "checkout" {
 				return fmt.Errorf("%s has invalid install_from %q (expected checkout)", label, tool.InstallFrom)
 			}
+		}
+	}
+	providedOwners := map[string]string{}
+	for name := range r.Delegated {
+		for _, provided := range r.ProvidedSkills(name) {
+			if owner := seen[provided]; owner != "" && !(provided == name && owner == "delegated") {
+				return fmt.Errorf("registry.yaml: delegated %s provides %s, which is already declared as %s", name, provided, owner)
+			}
+			if _, ok := r.ExternalTools[provided]; ok {
+				return fmt.Errorf("registry.yaml: delegated %s provides %s, which is already declared as an external tool", name, provided)
+			}
+			if owner := providedOwners[provided]; owner != "" && owner != name {
+				return fmt.Errorf("registry.yaml: delegated %s and %s both provide %s", owner, name, provided)
+			}
+			providedOwners[provided] = name
 		}
 	}
 	for name, t := range r.ExternalTools {
@@ -173,6 +204,9 @@ func (r *Registry) Validate() error {
 		if _, chained := r.Renames[newName]; chained {
 			return fmt.Errorf("registry.yaml: rename %s targets renamed skill %s; renames must point directly at the canonical skill", oldName, newName)
 		}
+		if owner := providedOwners[oldName]; owner != "" {
+			return fmt.Errorf("registry.yaml: rename source %s is also provided by delegated %s", oldName, owner)
+		}
 	}
 	experimentalSeen := map[string]bool{}
 	for _, name := range r.Experimental {
@@ -189,6 +223,25 @@ func (r *Registry) Validate() error {
 		}
 	}
 	return nil
+}
+
+// ProvidedSkills returns the visible skill and command names owned by a
+// delegated registry entry. Entries without an explicit provides list own a
+// skill with the same name as the registry key.
+func (r *Registry) ProvidedSkills(name string) []string {
+	if r == nil {
+		return nil
+	}
+	repo, ok := r.Delegated[name]
+	if !ok {
+		return nil
+	}
+	if len(repo.Provides) == 0 {
+		return []string{name}
+	}
+	out := append([]string(nil), repo.Provides...)
+	sort.Strings(out)
+	return out
 }
 
 // AllSkills returns every skill name (managed + delegated) in stable order.
