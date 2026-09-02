@@ -95,12 +95,6 @@ delegated:
     provides:
       - feature
       - feature:implement
-  subreview:
-    repo: github.com/charlesnpx/subreview
-    channel: latest-release
-    fallback_ref: main
-    visibility: public
-    optional: false
   agentbus:
     repo: github.com/charlesnpx/agentbus
     channel: latest-release
@@ -124,7 +118,6 @@ experimental:
   - azure-static-site
   - browse
   - feature-implement
-  - subreview
   - agentbus
   - delegate
 
