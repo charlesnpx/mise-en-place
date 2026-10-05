@@ -150,12 +150,13 @@ Omit any section that has no entries. Put `partly addressed`, `not addressed`, `
 
 ### File
 
-Write `~/Documents/pr-skills/reviews/PR_REVIEW_<repo-name>_<pr-number>_addressed_<n>.txt`, creating the directory if needed.
+Write `~/Documents/pr-skills/reviews/PR_REVIEW_<repo-name>_<pr-number>_<author>_addressed_<n>.txt`, creating the directory if needed.
 
 - `<repo-name>` is the `<REPO>` part of `<OWNER>/<REPO>`, with any character outside `[A-Za-z0-9._-]` replaced by `_`.
+- `<author>` is the PR author's GitHub login (`author.login` from Step 1), with the same character replacement.
 - `<n>` is the smallest positive integer for which the file does not exist yet, so earlier follow-ups are never overwritten.
 
-For example, the first follow-up on PR #123 in `NPXInnovation/echo` writes `~/Documents/pr-skills/reviews/PR_REVIEW_echo_123_addressed_1.txt`.
+For example, the first follow-up on PR #123 by `octocat` in `NPXInnovation/echo` writes `~/Documents/pr-skills/reviews/PR_REVIEW_echo_123_octocat_addressed_1.txt`.
 
 Use this format:
 
