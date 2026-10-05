@@ -23,7 +23,7 @@ Launch agents in parallel to collect the raw data. Agent A always runs; Agent B 
 
 Fetch ALL of the following for PR #$ARGUMENTS and return them in a single structured response:
 
-1. `gh pr view $ARGUMENTS --repo <OWNER>/<REPO> --json title,body,state,baseRefName,headRefName,files,commits,reviews,comments,additions,deletions,changedFiles`
+1. `gh pr view $ARGUMENTS --repo <OWNER>/<REPO> --json title,author,body,state,baseRefName,headRefName,files,commits,reviews,comments,additions,deletions,changedFiles`
 2. `gh pr diff $ARGUMENTS --repo <OWNER>/<REPO>` — the full diff
 3. For every file changed in the PR, fetch the **full file contents from the PR branch** so we have accurate line numbers (not just diff hunks):
    ```
@@ -193,11 +193,11 @@ Print your review to the terminal in this exact format. Omit the `**ADO:**` line
 - Keep explanations concise — lead with what's wrong, not background context
 - Do NOT suggest improvements that aren't directly related to the PR's changes (don't review untouched code)
 
-## Step 5: Write ~/Documents/pr-skills/reviews/PR_REVIEW_<repo-name>_<pr-number>.txt
+## Step 5: Write ~/Documents/pr-skills/reviews/PR_REVIEW_<repo-name>_<pr-number>_<author>.txt
 
-After printing the terminal review, create `~/Documents/pr-skills/reviews/` if needed, then write a file to `~/Documents/pr-skills/reviews/PR_REVIEW_<repo-name>_<pr-number>.txt` containing copy-pasteable inline comments for the PR. Each comment should be ready to paste directly into GitHub's review UI.
+After printing the terminal review, create `~/Documents/pr-skills/reviews/` if needed, then write a file to `~/Documents/pr-skills/reviews/PR_REVIEW_<repo-name>_<pr-number>_<author>.txt` containing copy-pasteable inline comments for the PR. Each comment should be ready to paste directly into GitHub's review UI.
 
-Use the `<REPO>` portion of `<OWNER>/<REPO>` from Step 0 as `<repo-name>`, with any character outside `[A-Za-z0-9._-]` replaced by `_`. Use the reviewed PR number as `<pr-number>`. For example, reviewing PR #123 in `NPXInnovation/echo` writes `~/Documents/pr-skills/reviews/PR_REVIEW_echo_123.txt`.
+Use the `<REPO>` portion of `<OWNER>/<REPO>` from Step 0 as `<repo-name>`, with any character outside `[A-Za-z0-9._-]` replaced by `_`. Use the reviewed PR number as `<pr-number>`. Use the PR author's GitHub login (`author.login` from Agent A's `gh pr view`) as `<author>`, with the same character replacement. For example, reviewing PR #123 by `octocat` in `NPXInnovation/echo` writes `~/Documents/pr-skills/reviews/PR_REVIEW_echo_123_octocat.txt`.
 
 Do not write to `~/Documents/pr-skills/reviews/PR_REVIEW.txt` unless the user explicitly supplied that exact output path.
 
