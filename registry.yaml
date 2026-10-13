@@ -58,6 +58,9 @@ delegated:
     channel: latest-release
     visibility: public
     optional: false
+    provides:
+      - paperclip
+      - paperclip:skill-feedback
   figma-fetch:
     repo: github.com/charlesnpx/figma-fetch
     channel: latest-release
