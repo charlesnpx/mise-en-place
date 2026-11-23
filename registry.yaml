@@ -16,21 +16,15 @@ managed:
   - azure-static-site
   - to-audience
   - prose
+  - ado
+  - figma
 
 renames:
   review-pr: pr
+  ado-query: ado
+  figma-fetch: figma
 
 delegated:
-  ado-query:
-    repo: github.com/charlesnpx/ado-query
-    channel: latest-release
-    visibility: public
-    optional: false
-  npx-ado-query:
-    repo: github.com/charlesnpx/npx-ado-query
-    channel: latest-release
-    visibility: private
-    optional: true
   browse:
     repo: github.com/charlesnpx/browse
     channel: latest-release
@@ -61,11 +55,6 @@ delegated:
     provides:
       - paperclip
       - paperclip:skill-feedback
-  figma-fetch:
-    repo: github.com/charlesnpx/figma-fetch
-    channel: latest-release
-    visibility: public
-    optional: false
   convo-relay:
     repo: github.com/charlesnpx/convo-relay
     channel: latest-release
@@ -123,13 +112,3 @@ experimental:
   - feature-implement
   - agentbus
   - delegate
-
-external_tools:
-  markitdown:
-    executable: markitdown
-    manager: pipx
-    package: "markitdown[all]"
-    install_by_default: true
-    optional: true
-    required_by:
-      - ado-query

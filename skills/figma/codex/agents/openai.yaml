@@ -1,0 +1,4 @@
+interface:
+  display_name: "Figma"
+  short_description: "Read-only Figma lookups via the REST API"
+  default_prompt: "Use $figma to read this Figma link."

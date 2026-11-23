@@ -1,0 +1,4 @@
+interface:
+  display_name: "ADO"
+  short_description: "Read-only Azure DevOps lookups via az CLI"
+  default_prompt: "Use $ado to read Azure DevOps work item context."

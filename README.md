@@ -37,7 +37,7 @@ If using `go install`, make sure `$(go env GOPATH)/bin` is on your `PATH`.
 mise-en-place install                             # install default skills and default external tools
 mise-en-place install --all                       # install default and experimental skills
 mise-en-place install humanizer                   # install one skill (both targets by default)
-mise-en-place install markitdown                  # verify/install one external tool
+mise-en-place install <tool>                      # verify/install one external tool
 mise-en-place install humanizer --target claude   # install only the Claude payload
 mise-en-place list
 mise-en-place install --all --strict              # fail if any optional dependency cannot be installed
@@ -114,8 +114,8 @@ Delegated source examples:
 
 ```yaml
 delegated:
-  ado-query:
-    repo: github.com/charlesnpx/ado-query
+  witness:
+    repo: github.com/charlesnpx/witness
     channel: latest-release
   agent-context:
     repo: github.com/charlesnpx/agent-context
@@ -234,7 +234,7 @@ external tools, `uninstall <skill>` removes delegated pipx tools with
 
 Go and other self-contained delegated CLIs should usually own their `tools`
 target from the delegated installer instead of using `registry.yaml tools:`.
-For example, `ado-query` and `convo-relay` stage files such as
+For example, `convo-relay` stages files such as
 `~/.local/bin/<tool>` under `--install-root` and report them in the installer
 JSON `targets.tools.files` list. Those files are owned, hashed, upgraded, and
 removed through the normal delegated file flow.
@@ -251,8 +251,6 @@ Skills may declare setup requirements for one or more capabilities:
 Use setup before a skill that needs account-specific configuration:
 
 ```sh
-mise-en-place setup figma-fetch --capability read
-mise-en-place setup ado-query --capability query
 mise-en-place setup azure-static-site --capability deploy
 ```
 
@@ -407,7 +405,7 @@ installer. Declare the pipx tool in `registry.yaml` instead. Such installers
 should still accept `--target tools --json` and may return an empty tools target:
 `"tools": {"files": []}`. Go and other self-contained CLIs may instead return
 real `tools` target files from the delegated installer, such as
-`~/.local/bin/ado-query` or `~/.local/bin/convo-relay`.
+`~/.local/bin/convo-relay`.
 
 For delegated upgrades, `mise-en-place` resolves the current source first and
 skips the reinstall when the installed version, resolved ref, and resolved
