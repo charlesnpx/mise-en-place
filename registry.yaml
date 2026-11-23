@@ -112,3 +112,11 @@ experimental:
   - feature-implement
   - agentbus
   - delegate
+
+external_tools:
+  markitdown:
+    executable: markitdown
+    manager: pipx
+    package: "markitdown[all]"
+    install_by_default: true
+    optional: true

@@ -37,7 +37,7 @@ If using `go install`, make sure `$(go env GOPATH)/bin` is on your `PATH`.
 mise-en-place install                             # install default skills and default external tools
 mise-en-place install --all                       # install default and experimental skills
 mise-en-place install humanizer                   # install one skill (both targets by default)
-mise-en-place install <tool>                      # verify/install one external tool
+mise-en-place install markitdown                  # verify/install one external tool
 mise-en-place install humanizer --target claude   # install only the Claude payload
 mise-en-place list
 mise-en-place install --all --strict              # fail if any optional dependency cannot be installed
