@@ -281,6 +281,7 @@ TYPE: <bug | test quality | code quality | nit | ADO coverage>
 ```
 
 ### Rules for the comment file:
+- Order comments the way they appear in GitHub's Files Changed tab: files in the order `gh pr diff` lists them (the same order as `files` from `gh pr view`), and within each file by `LINE`, lowest first. Do not group comments by `TYPE`. Comments with no specific line (for example ADO coverage) go after all line comments.
 - Every comment MUST include a `TYPE:` line identifying the finding type: `bug`, `test quality`, `code quality`, `nit`, or `ADO coverage`.
 - Line numbers MUST be from the PR branch file (fetched via GitHub API), not diff hunk offsets.
 - Run $humanizer on each comment before writing it. Strip any remaining AI patterns.

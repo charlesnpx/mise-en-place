@@ -125,7 +125,7 @@ Write the full conversation-style review, not the condensed inline-comment forma
 
 ~/Documents/pr-skills/reviews/PR_REVIEW_<safe-branch-name>.md
 
-Include branch name, parent branch, merge-base SHA, HEAD SHA, changed-file count, diff stat, findings grouped as Bugs, Code Quality, Nits, and ADO coverage only if a work item is detected locally.
+Include branch name, parent branch, merge-base SHA, HEAD SHA, changed-file count, diff stat, findings, and ADO coverage only if a work item is detected locally. Order findings the way they would appear in GitHub's Files Changed tab: files in the order `git diff --name-only <merge-base>...HEAD` lists them, then by line number within each file, lowest first. Label each finding's severity (bug, code quality, nit) instead of grouping findings by severity. Put ADO coverage last.
 
 Do not modify repo files. Do not post comments. Do not write any other files.
 ```
@@ -151,7 +151,7 @@ Write the full conversation-style review to:
 
 ~/Documents/pr-skills/reviews/PR_REVIEW_STACK_<safe-base-ref>_to_<safe-last-branch>.md
 
-Include base ref, final branch, merge-base SHA, HEAD SHA, changed-file count, diff stat, findings grouped as Bugs, Code Quality, Nits, and ADO coverage only if a work item is detected locally.
+Include base ref, final branch, merge-base SHA, HEAD SHA, changed-file count, diff stat, findings, and ADO coverage only if a work item is detected locally. Order findings the way they would appear in GitHub's Files Changed tab: files in the order `git diff --name-only <merge-base>...HEAD` lists them, then by line number within each file, lowest first. Label each finding's severity (bug, code quality, nit) instead of grouping findings by severity. Put ADO coverage last.
 
 Do not modify repo files. Do not post comments. Do not write any other files.
 ```
