@@ -1,0 +1,4 @@
+interface:
+  display_name: "Simple English"
+  short_description: "Explain in simple, self-contained English"
+  default_prompt: "Use $simple-english to explain this in simple English."
