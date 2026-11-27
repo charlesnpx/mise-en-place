@@ -183,6 +183,7 @@ TYPE: <bug | test quality | code quality | nit | ADO coverage>
 
 Comment rules:
 
+- Order comments the way they would appear in GitHub's Files Changed tab: files in the order `git diff --name-only <merge-base>...HEAD` lists them, and within each file by `LINE`, lowest first. Do not group comments by `TYPE`. Comments with no specific line (for example ADO coverage) go after all line comments.
 - Every comment MUST include `FILE`, `LINE`, and `TYPE`.
 - Line numbers MUST be from `HEAD` file contents.
 - Keep comments actionable and short.
